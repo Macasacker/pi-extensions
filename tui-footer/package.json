@@ -1,0 +1,10 @@
+{
+  "name": "pi-tui-footer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Readable, labeled TUI footer for the pi coding agent",
+  "scripts": {
+    "test": "node --experimental-strip-types --import ./test/setup.mjs ./test/footer.test.mjs"
+  }
+}
