@@ -1,0 +1,14 @@
+{
+  "name": "pi-web-search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Safe, allowlist-gated web search and fetch tools for the pi coding agent",
+  "scripts": {
+    "test": "node --experimental-strip-types --import ./test/setup.mjs ./test/run.mjs"
+  },
+  "dependencies": {
+    "node-html-parser": "^9.0.4",
+    "typebox": "^1.0.0"
+  }
+}
