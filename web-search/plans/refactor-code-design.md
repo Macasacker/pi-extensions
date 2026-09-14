@@ -1,7 +1,7 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 5 executing (resumed 2026-09-14; waves 5a `49a97e0`, 5b `9a21473` done).**
-> Phases 0–4 are committed (see git log). Phases 5–7 are approved and executing.
+> **STATUS: IN PROGRESS — phase 6 executing (phase 5 complete 2026-09-14; code `49a97e0`, `9a21473`, `95623a3`; 140/140 tests; live smoke green).**
+> Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
@@ -255,7 +255,7 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     so the e2e surface is unchanged; `getProvider` uses `getTestProvider()`.
     The test seam is now the only module-level mutable `let` in the package.
 
-### Phase 5 — Decompose index.ts (the structural fix)
+### Phase 5 — Decompose index.ts (the structural fix) [DONE 2026-09-14]
 
 - [x] 16. `src/tools/search.ts`: `executeWebSearch(params, deps)` where `deps` bundles
     `{ config, session, provider, signal, ctx, pi }` (+ `onUpdate`); internal named steps
@@ -273,15 +273,29 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     `isHttpUrl` / `isHtmlContentType`; `buildFetchOutput` returns
     `{ result, outputChars }` so the success log detail stays byte-identical;
     `buildUntrustedBannerHead` moved here. Wave 5b, committed `9a21473`.
-- [ ] 18. `src/commands/domains.ts`: `parseDomainCommandArgs(tokens)`,
+- [x] 18. `src/commands/domains.ts`: `parseDomainCommandArgs(tokens)`,
     `applyDomainChange(ctx, { action, domain, projectScope })` (the shared
     validation sequence, once), `showDomainList(loadedConfig)`;
     `src/commands/status.ts`: `buildStatusReport(loadedConfig, session)`.
-- [ ] 19. index.ts shrinks to registration only: events, `registerTool` ×2 (thin
+    **Deviations:** `applyDomainChange(command, deps)` takes a parsed
+    `DomainCommand` (discriminated union) + a deps bag; the add/remove
+    difference is a `DOMAIN_CHANGE_STRATEGIES` data table (frozen message
+    asymmetry preserved); `buildStatusReport(config, session)` takes the
+    narrower `WebSearchConfig`; `buildDomainListSummary` split out as the
+    pure text builder; `DismissableText`/`noteAllowlistChange` moved to
+    `src/commands/domains.ts`. Wave 5c, committed `95623a3`.
+- [x] 19. index.ts shrinks to registration only: events, `registerTool` ×2 (thin
     wrappers calling the execute functions), `registerCommand` ×2, entry
-    renderer. Target: ≤ ~150 lines.
-- [ ] 20. Update test imports where paths moved; e2e keeps importing `../index.ts`.
-- [ ] 21. **Gate: full `npm test` + live `pi -p` smoke test.**
+    renderer. Result: 147 lines (target ≤ ~150).
+- [x] 20. Update test imports where paths moved; e2e keeps importing `../index.ts`.
+    No import updates were needed (no test imports a moved module directly);
+    new `test/commands.test.mjs` (30 tests) added per the wave-5c review's
+    Optional finding, pinning the frozen command strings.
+- [x] 21. **Gate: full `npm test` + live `pi -p` smoke test.** — done
+    2026-09-14: 140/140 tests; live smoke in /tmp/websearch-smoke (search
+    with allowlist filtering, allowed fetch with untrusted banner +
+    truncation temp file, blocked fetch fail-closed) all behaved exactly as
+    before. **Phase 5 complete.**
 
 ### Phase 6 — Control-flow polish in leaf modules
 

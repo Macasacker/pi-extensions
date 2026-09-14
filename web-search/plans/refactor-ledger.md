@@ -1,8 +1,9 @@
 # Ledger: web-search code-design refactor
 
-Status: **IN PROGRESS — phases 5–7 being orchestrated (resumed 2026-09-14).**
-Phases 0–4 are committed (phase 4: `b9145a1` code, `e9e75aa` docs). Phases
-5–7 are approved and now executing. Orchestrator: main session.
+Status: **IN PROGRESS — phase 6 starting (phase 5 complete, 2026-09-14).**
+Phases 0–5 are committed (phase 5: `49a97e0`, `9a21473`, `95623a3` code +
+docs commits; 140/140 tests; live `pi -p` smoke green). Phase 6 is approved
+and executing. Orchestrator: main session.
 Loop per phase (per AGENTS.md Orchestration Convention): one implementation
 subagent scoped to the phase (follows the `code-design` skill, runs the
 validation gates, no commits) → orchestrator verifies the diff and re-runs the
@@ -107,9 +108,11 @@ domain concept, e.g. `e` in a catch clause → `error`): `res`→`response`,
 
 ## Not started
 
-- Phases 5–7 of `plans/refactor-code-design.md` (index.ts decomposition,
-  control-flow polish, hygiene sweep). Phases 5 and 6 additionally end with a
-  live `pi -p` smoke test; phase 6 with a fresh adversarial review pass.
+- Phase 6 (control-flow polish, items 22–28) — wave plan above; ends with
+  full `npm test` + live `pi -p` smoke + a fresh adversarial review pass
+  (bypass matrix re-verified).
+- Phase 7 (hygiene sweep, items 29–31) — wave plan above; ends with final
+  `npm test` + live smoke.
 
 ## Decision (resolved 2026-09-14)
 
@@ -246,20 +249,57 @@ Phase 5 is broken into per-module waves (each wave keeps all gates green):
    (small `max_chars` on a long page) and the `[Redirects: …]` note
    (redirecting e2e endpoint); (b) aborted-signal test should also assert the
    fake provider was actually invoked (pins post-settle vs pre-call branch).
-3. [ ] **5c — item 18**: `src/commands/domains.ts` — `parseDomainCommandArgs`,
-   `applyDomainChange` (shared add/remove validation sequence, once),
-   `showDomainList` (+ `DismissableText` moves here); `src/commands/status.ts`
-   — `buildStatusReport(loadedConfig, session)`.
-4. [ ] **5d — items 19+20**: index.ts shrinks to registration only (events,
-   registerTool ×2 thin wrappers, registerCommand ×2, entry renderer; ≤ ~150
-   lines); test imports updated where paths moved (e2e keeps `../index.ts`).
-5. [ ] **5e — item 21**: gate — full `npm test` + live `pi -p` smoke test
-   (orchestrator runs: search + allowed fetch + blocked domain in
-   /tmp/websearch-smoke; pi binary at
-   /home/mac/.local/share/pi-node/node-v22.22.3-linux-x64/bin/pi, extension
-   registered in ~/.pi/agent/settings.json with non-empty allowedDomains).
+3. [x] **5c — item 18**: `src/commands/domains.ts` — `parseDomainCommandArgs`
+   (pure; discriminated union `DomainChangeCommand | DomainListCommand`;
+   returns `domainTokens: string[]` not a single `domain` — the multi-token
+   check needs the raw token count), `applyDomainChange(command, deps)`
+   (the shared add/remove validation sequence ONCE — audit F1 fixed; the
+   add/remove difference is a `DOMAIN_CHANGE_STRATEGIES` data table:
+   untrusted-project message, allowlist mutation, success message — frozen
+   message asymmetry preserved: add carries the "Use global scope" suffix,
+   remove does not), `showDomainList` + pure `buildDomainListSummary`;
+   `DismissableText` (exported) and `noteAllowlistChange` (module-private)
+   moved here. `src/commands/status.ts` — `buildStatusReport(config, session)`
+   (takes the narrower `WebSearchConfig`, not `LoadedConfig` — the report
+   never reads domainSources). Deviation: the domains handler loads config
+   only on the list path (loadConfig is total/read-only — no observable
+   change). — done: gates green (110/110 at review time; 140/140 after the
+   fixer below); adversarial review **Verdict: Ready** (strategy table
+   literal-identical to the original branches; parse edge cases exercised).
+   Review's Optional finding (frozen command strings under-pinned) fixed by a
+   focused fix subagent before commit: new `test/commands.test.mjs` (30
+   tests, registered in run.mjs after config.test.mjs) pins all five frozen
+   notification strings exactly, parse edge cases, list-view summary,
+   status-report lines, drift-baseline refresh; `withTempHome` helper
+   saves/restores `process.env.HOME` per test (run.mjs runs all files in one
+   process — a leak would corrupt e2e). Fixer also surfaced a **pre-existing
+   quirk, pinned as-is**: a *leading* `--project` is consumed as the
+   (unknown) action word, so `/web-search-domains --project add x` silently
+   degrades to the list view (identical in the pre-refactor code; changing
+   it would be a behavior change, out of scope — candidate for a future
+   feature decision).
+4. [x] **5d — items 19+20**: satisfied by 5c's work — index.ts is 147 lines
+   (≤ ~150 target), registration-only (events, registerTool ×2 thin
+   wrappers, registerCommand ×2, entry renderer); no test import updates
+   needed (verified: every test import still resolves; e2e keeps
+   `../index.ts`). No separate subagent required — orchestrator verified
+   directly from the 5c diff.
+5. [x] **5e — item 21**: gate — full `npm test` + live `pi -p` smoke test.
+   — done (orchestrator, 2026-09-14): 140/140 tests green; live smoke in
+   /tmp/websearch-smoke via `pi -p --no-builtin-tools --no-session` (local
+   llama model `chat`): (a) `web_search "TypeScript 5.9 release notes"`
+   → 4 real DDG results, all allowlisted, "(4 result(s) hidden)"; (b)
+   `web_fetch https://en.wikipedia.org/wiki/TypeScript` max_chars 2000 →
+   `<<< UNTRUSTED WEB CONTENT` banner, HTTP 200, truncation note with temp
+   file `pi-web-search-call_791ee3b1eb78995e.txt` (toolCallId naming works
+   live); (c) `web_fetch https://example.com/` → `Blocked: … Domain
+   example.com is not in the allowlist. Allowed domains: …` (fail-closed,
+   built-ins + user global settings unioned). **Phase 5 complete.**
 
 ## Phase 6 wave plan (items 22–28)
+
+Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
+`95623a3` + docs commits; 140/140 tests; live smoke green).
 
 1. [ ] **6a — item 22**: `checkUrl` → thin dispatcher (`checkUrlScheme`,
    `checkIpLiteralHost`, `checkDomainHost` in domains.ts).
@@ -288,11 +328,8 @@ Phase 5 is broken into per-module waves (each wave keeps all gates green):
 
 ## Next action
 
-Wave 5c: implementation subagent for `src/commands/domains.ts` +
-`src/commands/status.ts` (item 18) — `parseDomainCommandArgs`,
-`applyDomainChange` (shared add/remove validation sequence, once),
-`showDomainList` (+ `DismissableText` moves here), `buildStatusReport`;
-plus the two 5b review carry-overs (truncation/redirect-note e2e pins,
-provider-invocation assertion in the cancel test). After it reports:
-orchestrator verifies diff + re-runs gates → adversarial review subagent →
-fix subagent if findings → commit → ledger → wave 5d.
+Phase 6, wave 6a (item 22): implementation subagent for `checkUrl` → thin
+dispatcher (`checkUrlScheme`, `checkIpLiteralHost`, `checkDomainHost` in
+domains.ts). After it reports: orchestrator verifies diff + re-runs gates →
+adversarial review subagent → fix subagent if findings → commit → ledger →
+wave 6b.
