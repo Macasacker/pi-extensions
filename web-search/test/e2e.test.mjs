@@ -20,6 +20,18 @@ const server = http.createServer((request, response) => {
 		response.end(`<html><head><title></title></head><body><script>${"var x=1;".repeat(2000)}</script><div id=\"app\"></div></body></html>`);
 		return;
 	}
+	if (request.url === "/long") {
+		// Long page: enough readable text to truncate at the 1000-char schema minimum
+		response.writeHead(200, { "Content-Type": "text/html" });
+		response.end(`<html><head><title>Long Page</title></head><body><article><h1>Long Heading</h1><p>${"lorem ipsum dolor sit amet ".repeat(100)}</p></article></body></html>`);
+		return;
+	}
+	if (request.url === "/redirect") {
+		// Redirects to the allowed /page so the fetch follows one hop inside the allowlist
+		response.writeHead(302, { Location: "/page" });
+		response.end();
+		return;
+	}
 	response.writeHead(200, { "Content-Type": "text/html" });
 	response.end("<html><head><title>E2E Page</title></head><body><article><h1>E2E Heading</h1><p>e2e body text</p></article></body></html>");
 });
@@ -300,9 +312,13 @@ await test("web_search reports when nothing is allowed", async () => {
 
 await test("should report Cancelled and log a cancelled entry when the signal aborts before the provider search settles", async () => {
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
+	let searchInvoked = false;
 	setTestProvider({
 		id: "fake",
-		search: async () => [{ title: "Allowed Doc", url: `http://127.0.0.1:${port}/doc`, snippet: "allowed snippet" }],
+		search: async () => {
+			searchInvoked = true; // the provider must be called even when the signal is already aborted
+			return [{ title: "Allowed Doc", url: `http://127.0.0.1:${port}/doc`, snippet: "allowed snippet" }];
+		},
 	});
 
 	const abortController = new AbortController();
@@ -310,6 +326,7 @@ await test("should report Cancelled and log a cancelled entry when the signal ab
 	const searchResult = await tools.web_search.execute("tc30", { query: "test query" }, abortController.signal, undefined, mockContext);
 	setTestProvider(undefined);
 
+	assert.ok(searchInvoked, "the provider was invoked — the abort is checked after the search settles, not before the call");
 	assert.equal(searchResult.content[0].text, "Cancelled");
 	const logEntry = logEntries.at(-1);
 	assert.equal(logEntry.type, "web-search-log");
@@ -425,6 +442,40 @@ await test("JS-shell / login-wall page is flagged as low-content; normal page is
 	const normal = await tools.web_fetch.execute("tc16", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, mockContext);
 	assert.equal(normal.details.lowContent, false);
 	assert.doesNotMatch(normal.content[0].text, /little readable text/);
+});
+
+await test("should append the truncation note with the temp file path when the page exceeds max_chars", async () => {
+	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
+	const minMaxChars = 1000; // the schema minimum for web_fetch's max_chars
+
+	const fetchResult = await tools.web_fetch.execute("tc40", { url: `http://127.0.0.1:${port}/long`, max_chars: minMaxChars }, signal, undefined, mockContext);
+	const text = fetchResult.content[0].text;
+
+	assert.equal(fetchResult.details.truncated, true);
+	const truncationNote = text.match(/\[Content truncated: (\d+) of (\d+) chars\. Full text saved to: (.+)\]/);
+	assert.ok(truncationNote, `truncation note missing: ${JSON.stringify(text)}`);
+	assert.equal(Number(truncationNote[1]), minMaxChars, "output is capped at max_chars");
+	assert.ok(Number(truncationNote[2]) > minMaxChars, "the page was longer than the cap");
+	const fullTextFile = truncationNote[3];
+	assert.equal(fullTextFile, path.join(os.tmpdir(), "pi-web-search-tc40.txt"));
+	assert.ok(fs.existsSync(fullTextFile), "full text file was written");
+	assert.equal(fs.readFileSync(fullTextFile, "utf8").length, Number(truncationNote[2]), "the temp file holds the full pre-truncation text");
+	assert.ok(text.includes("Long Heading"), "the kept head of the page is present");
+});
+
+await test("should append the redirect note when the server redirects to an allowed page", async () => {
+	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
+
+	const fetchResult = await tools.web_fetch.execute("tc41", { url: `http://127.0.0.1:${port}/redirect` }, signal, undefined, mockContext);
+	const text = fetchResult.content[0].text;
+
+	assert.ok(
+		text.includes(`[Redirects: http://127.0.0.1:${port}/redirect → http://127.0.0.1:${port}/page]`),
+		`redirect note missing: ${JSON.stringify(text)}`,
+	);
+	assert.equal(fetchResult.details.redirectCount, 1);
+	assert.equal(fetchResult.details.finalUrl, `http://127.0.0.1:${port}/page`);
+	assert.equal(fetchResult.details.status, 200);
 });
 
 await test("out-of-band allowlist change (e.g. agent editing settings.json) is detected and surfaced", async () => {

@@ -2,6 +2,7 @@
 const files = [
 	"domains.test.mjs",
 	"config.test.mjs",
+	"commands.test.mjs",
 	"sanitize.test.mjs",
 	"extract.test.mjs",
 	"providers.test.mjs",

@@ -24,20 +24,15 @@
  * .pi/settings.json). See README.md.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Text, matchesKey } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
-import {
-	loadConfig,
-	globalSettingsPath,
-	projectSettingsPath,
-	updateSettingsDomains,
-	sanitizeDomainEntry,
-} from "./src/config.ts";
-import { expandEnvRef } from "./src/providers/brave.ts";
+import { loadConfig } from "./src/config.ts";
+import { applyDomainChange, parseDomainCommandArgs, showDomainList } from "./src/commands/domains.ts";
+import { buildStatusReport } from "./src/commands/status.ts";
 import { renderSearchCall, renderSearchResult, renderFetchCall, renderFetchResult } from "./src/render.ts";
-import { createSessionState, getProvider, type SessionState } from "./src/session.ts";
+import { createSessionState, getProvider } from "./src/session.ts";
 import type { LogData } from "./src/log.ts";
 import { prepareToolExecution } from "./src/tools/common.ts";
 import { executeWebSearch } from "./src/tools/search.ts";
@@ -45,38 +40,6 @@ import { executeWebFetch } from "./src/tools/fetch.ts";
 
 // The e2e suite imports this from index.ts — re-exported from the seam module.
 export { setTestProvider } from "./src/test-seam.ts";
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-/** Called by /web-search-domains after it writes settings, so user-initiated changes don't trigger the drift warning. */
-function noteAllowlistChange(ctx: ExtensionContext, session: SessionState): void {
-	try {
-		session.lastAllowlist = [...loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false }).config.allowedDomains].sort();
-	} catch {
-		session.lastAllowlist = null;
-	}
-}
-
-// A Text component that dismisses itself on escape/enter/ctrl+c. pi-tui
-// dispatches keyboard input via handleInput(data) on the focused component —
-// the Component interface has no onKey property, so a plain Text would
-// never receive keys and the dialog could not be dismissed.
-class DismissableText extends Text {
-	private readonly onDismiss: () => void;
-
-	constructor(text: string, onDismiss: () => void) {
-		super(text, 1, 1);
-		this.onDismiss = onDismiss;
-	}
-
-	handleInput(data: string): void {
-		if (matchesKey(data, "escape") || matchesKey(data, "return") || matchesKey(data, "ctrl+c")) {
-			this.onDismiss();
-		}
-	}
-}
 
 // ---------------------------------------------------------------------------
 // extension
@@ -152,76 +115,14 @@ export default function (pi: ExtensionAPI) {
 		description: "Show the web-search domain allowlist; add/remove domains (add <domain> [--project], remove <domain> [--project])",
 		handler: async (args, ctx) => {
 			const tokens = String(args ?? "").trim().split(/\s+/).filter(Boolean);
-			const scopeProject = tokens.includes("--project");
-			// Non-flag tokens after the action word form the domain; --project may appear anywhere.
-			const domainTokens = tokens.slice(1).filter((token) => !token.startsWith("--"));
-			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
-			const config = loadedConfig.config;
-
-			const target = scopeProject ? projectSettingsPath(ctx.cwd) : globalSettingsPath();
-
-			if (tokens[0] === "add" && domainTokens.length > 0) {
-				if (domainTokens.length > 1) {
-					ctx.ui.notify(`Domains can't contain spaces. Did you mean: /web-search-domains add ${domainTokens[0]}?`, "error");
-					return;
-				}
-				const domain = sanitizeDomainEntry(domainTokens[0]);
-				if (!domain) {
-					ctx.ui.notify(`Invalid domain: ${domainTokens[0]}`, "error");
-					return;
-				}
-				if (scopeProject && !(ctx.isProjectTrusted?.() ?? false)) {
-					ctx.ui.notify("Project is not trusted; cannot modify project settings. Use global scope (omit --project).", "error");
-					return;
-				}
-				updateSettingsDomains(target, (allowlist) => (allowlist.some((existingDomain) => existingDomain.toLowerCase() === domain) ? allowlist : [...allowlist, domain]));
-				noteAllowlistChange(ctx, session);
-				ctx.ui.notify(`Added ${domain} to ${scopeProject ? "project" : "global"} allowlist — effective immediately`, "info");
+			const command = parseDomainCommandArgs(tokens);
+			if (command.action !== "list") {
+				applyDomainChange(command, { ctx, session });
 				return;
 			}
-
-			if (tokens[0] === "remove" && domainTokens.length > 0) {
-				if (domainTokens.length > 1) {
-					ctx.ui.notify(`Domains can't contain spaces. Did you mean: /web-search-domains remove ${domainTokens[0]}?`, "error");
-					return;
-				}
-				const domain = sanitizeDomainEntry(domainTokens[0]);
-				if (!domain) {
-					ctx.ui.notify(`Invalid domain: ${domainTokens[0]}`, "error");
-					return;
-				}
-				if (scopeProject && !(ctx.isProjectTrusted?.() ?? false)) {
-					ctx.ui.notify("Project is not trusted; cannot modify project settings.", "error");
-					return;
-				}
-				updateSettingsDomains(target, (allowlist) => allowlist.filter((existingDomain) => existingDomain.toLowerCase() !== domain));
-				noteAllowlistChange(ctx, session);
-				ctx.ui.notify(`Removed ${domain} from ${scopeProject ? "project" : "global"} allowlist — effective immediately`, "info");
-				return;
-			}
-
 			// No action (or unknown action): show the effective allowlist.
-			const lines: string[] = ["web-search allowed domains:"];
-			for (const source of loadedConfig.domainSources) {
-				lines.push(`  ${source.path === "(built-in)" ? "built-in defaults" : source.path}:`);
-				for (const domain of source.domains) lines.push(`    ${domain}`);
-			}
-			if (loadedConfig.domainSources.length === 0) lines.push("  (none — every fetch will be blocked)");
-			lines.push("");
-			lines.push(
-				`options: subdomains=${config.allowSubdomains} confirmOutsideAllowlist=${config.confirmOutsideAllowlist} privateNetworks=${config.blockPrivateNetworks ? "blocked" : "allowed"} provider=${config.provider}`,
-			);
-			lines.push("");
-			lines.push("usage: /web-search-domains add <domain> [--project] | remove <domain> [--project]");
-			const summary = lines.join("\n");
-
-			if (ctx.mode === "tui") {
-				await ctx.ui.custom<string | null>((_tui, _theme, _keybindings, done) => {
-					return new DismissableText(summary, () => done(null));
-				});
-			} else if (ctx.hasUI) {
-				ctx.ui.notify(summary, "info");
-			}
+			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
+			await showDomainList(loadedConfig, ctx);
 		},
 	});
 
@@ -231,15 +132,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Show web-search configuration and session usage",
 		handler: async (_args, ctx) => {
 			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
-			const config = loadedConfig.config;
-			const lines = [
-				`web-search: ${config.enabled ? "enabled" : "DISABLED"}`,
-				`provider: ${config.provider}${config.provider === "brave" ? (expandEnvRef(config.braveApiKey) ? " (key set)" : " (NO KEY — falling back to duckduckgo)") : ""}`,
-				`allowlist: ${config.allowedDomains.length} domain(s) [${config.allowedDomains.slice(0, 8).join(", ")}${config.allowedDomains.length > 8 ? ", …" : ""}]`,
-				`limits: ${config.maxResults} results, ${config.maxContentChars} chars, ${Math.round(config.maxDownloadBytes / 1024)}KB, ${config.timeoutMs / 1000}s timeout, ${config.maxRedirects} redirects`,
-				`session: ${session.callCount} call(s), ${session.grants.size} granted host(s)${session.grants.size ? ` (${[...session.grants].join(", ")})` : ""}`,
-			];
-			ctx.ui.notify(lines.join("\n"), "info");
+			ctx.ui.notify(buildStatusReport(loadedConfig.config, session), "info");
 		},
 	});
 
