@@ -163,17 +163,19 @@ function checkAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, config: We
 /** Called by /web-search-domains after it writes settings, so user-initiated changes don't trigger the drift warning. */
 function noteAllowlistChange(ctx: ExtensionContext): void {
 	try {
-		lastAllowlist = [...loadConfig(ctx.cwd, ctx.isProjectTrusted?.() ?? false).config.allowedDomains].sort();
+		lastAllowlist = [...loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false }).config.allowedDomains].sort();
 	} catch {
 		lastAllowlist = null;
 	}
 }
 
-function guardEnabled(config: WebSearchConfig, ctx: ExtensionContext, kind: "search" | "fetch", target: string, pi: ExtensionAPI): void {
+function assertEnabled(config: WebSearchConfig): void {
 	if (!config.enabled) {
-		logCall(pi, ctx, { kind, target, ok: false, detail: "disabled (webSearch.enabled: false)" });
 		throw new Error("web-search is disabled (webSearch.enabled: false). Re-enable it in settings to use web_search/web_fetch.");
 	}
+}
+
+function warnIfAllowlistEmpty(config: WebSearchConfig, ctx: ExtensionContext): void {
 	if (config.allowedDomains.length === 0 && !warnedEmptyAllowlist) {
 		warnedEmptyAllowlist = true;
 		if (ctx.hasUI) ctx.ui.notify("web-search: allowlist is empty — every fetch will be blocked. Use /web-search-domains to add domains.", "warning");
@@ -238,9 +240,15 @@ export default function (pi: ExtensionAPI) {
 			max_results: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Max results to return (default from config, usually 8)" })),
 		}),
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			const loadedConfig = loadConfig(ctx.cwd, ctx.isProjectTrusted?.() ?? false);
+			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
 			const config = loadedConfig.config;
-			guardEnabled(config, ctx, "search", params.query, pi);
+			try {
+				assertEnabled(config);
+			} catch (error) {
+				logCall(pi, ctx, { kind: "search", target: params.query, ok: false, detail: "disabled (webSearch.enabled: false)" });
+				throw error;
+			}
+			warnIfAllowlistEmpty(config, ctx);
 			checkAllowlistDrift(pi, ctx, config);
 
 			const provider = getProvider(config, ctx);
@@ -309,9 +317,15 @@ export default function (pi: ExtensionAPI) {
 			max_chars: Type.Optional(Type.Integer({ minimum: 1000, maximum: 100000, description: "Max characters of extracted text to return (default from config, usually 20000)" })),
 		}),
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			const loadedConfig = loadConfig(ctx.cwd, ctx.isProjectTrusted?.() ?? false);
+			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
 			const config = loadedConfig.config;
-			guardEnabled(config, ctx, "fetch", params.url, pi);
+			try {
+				assertEnabled(config);
+			} catch (error) {
+				logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: "disabled (webSearch.enabled: false)" });
+				throw error;
+			}
+			warnIfAllowlistEmpty(config, ctx);
 			checkAllowlistDrift(pi, ctx, config);
 
 			let allowlistOptions = buildAllowlistOptions(config);
@@ -442,7 +456,7 @@ export default function (pi: ExtensionAPI) {
 			const scopeProject = tokens.includes("--project");
 			// Non-flag tokens after the action word form the domain; --project may appear anywhere.
 			const domainTokens = tokens.slice(1).filter((token) => !token.startsWith("--"));
-			const loadedConfig = loadConfig(ctx.cwd, ctx.isProjectTrusted?.() ?? false);
+			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
 			const config = loadedConfig.config;
 
 			const target = scopeProject ? projectSettingsPath(ctx.cwd) : globalSettingsPath();
@@ -517,7 +531,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("web-search-status", {
 		description: "Show web-search configuration and session usage",
 		handler: async (_args, ctx) => {
-			const loadedConfig = loadConfig(ctx.cwd, ctx.isProjectTrusted?.() ?? false);
+			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
 			const config = loadedConfig.config;
 			const lines = [
 				`web-search: ${config.enabled ? "enabled" : "DISABLED"}`,

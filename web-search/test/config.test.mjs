@@ -27,7 +27,7 @@ function makeEnvironment() {
 await test("built-in defaults only when no settings exist", () => {
 	const environment = makeEnvironment();
 	try {
-		const { config, domainSources } = loadConfig(environment.cwd, true, environment.home);
+		const { config, domainSources } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
 		assert.deepEqual(config.allowedDomains, BUILTIN_DEFAULTS.allowedDomains);
 		assert.equal(config.provider, "duckduckgo");
 		assert.equal(config.enabled, true);
@@ -42,7 +42,7 @@ await test("global settings extend the allowlist (union, not replace)", () => {
 	const environment = makeEnvironment();
 	try {
 		environment.writeGlobal({ webSearch: { allowedDomains: ["internal.docs.io"] }, otherKey: 42 });
-		const { config, domainSources } = loadConfig(environment.cwd, true, environment.home);
+		const { config, domainSources } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
 		assert.ok(config.allowedDomains.includes("internal.docs.io"));
 		assert.ok(config.allowedDomains.includes("github.com"), "built-ins preserved");
 		assert.equal(domainSources.length, 2);
@@ -55,9 +55,9 @@ await test("project settings honored only when trusted", () => {
 	const environment = makeEnvironment();
 	try {
 		environment.writeProject({ webSearch: { allowedDomains: ["proj.example"] } });
-		const trustedConfig = loadConfig(environment.cwd, true, environment.home);
+		const trustedConfig = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
 		assert.ok(trustedConfig.config.allowedDomains.includes("proj.example"));
-		const untrustedConfig = loadConfig(environment.cwd, false, environment.home);
+		const untrustedConfig = loadConfig({ cwd: environment.cwd, projectTrusted: false, homeDir: environment.home });
 		assert.ok(!untrustedConfig.config.allowedDomains.includes("proj.example"));
 		assert.ok(!untrustedConfig.domainSources.some((domainSource) => domainSource.path.includes("settings.json") && domainSource.path.startsWith(environment.cwd)));
 	} finally {
@@ -69,7 +69,7 @@ await test("useBuiltins: false drops built-in domains, keeps user domains", () =
 	const environment = makeEnvironment();
 	try {
 		environment.writeGlobal({ webSearch: { useBuiltins: false, allowedDomains: ["only.this"] } });
-		const { config } = loadConfig(environment.cwd, true, environment.home);
+		const { config } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
 		assert.ok(!config.allowedDomains.includes("github.com"));
 		assert.deepEqual(config.allowedDomains, ["only.this"]);
 	} finally {
@@ -89,7 +89,7 @@ await test("numeric settings are clamped, bad types fall back", () => {
 				provider: "bing",
 			},
 		});
-		const { config } = loadConfig(environment.cwd, true, environment.home);
+		const { config } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
 		assert.equal(config.maxResults, 20); // clamped to max
 		assert.equal(config.timeoutMs, 1000); // clamped to min
 		assert.equal(config.maxRedirects, BUILTIN_DEFAULTS.maxRedirects); // bad type → fallback
@@ -104,7 +104,7 @@ await test("malformed settings file is treated as absent", () => {
 	const environment = makeEnvironment();
 	try {
 		fs.writeFileSync(path.join(environment.home, ".pi", "agent", "settings.json"), "{not json");
-		const { config } = loadConfig(environment.cwd, true, environment.home);
+		const { config } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
 		assert.deepEqual(config.allowedDomains, BUILTIN_DEFAULTS.allowedDomains);
 	} finally {
 		environment.cleanup();
@@ -131,7 +131,7 @@ await test("duplicate/aliased domains are not double-added", () => {
 	const environment = makeEnvironment();
 	try {
 		environment.writeGlobal({ webSearch: { allowedDomains: ["WWW.Example.COM", "example.com", "docs.python.org"] } });
-		const { config } = loadConfig(environment.cwd, true, environment.home);
+		const { config } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
 		const lowercasedDomains = config.allowedDomains.map((domain) => domain.toLowerCase());
 		assert.equal(lowercasedDomains.filter((domain) => domain === "example.com").length, 1);
 		assert.equal(lowercasedDomains.filter((domain) => domain === "docs.python.org").length, 1);

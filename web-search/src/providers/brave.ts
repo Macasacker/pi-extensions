@@ -21,17 +21,18 @@ export function expandEnvRef(value: string): string {
 	return value;
 }
 
-export function createBraveProvider(apiKey: string): SearchProvider {
+export function createBraveProvider(apiKey: string, options?: { fetchImpl?: typeof fetch }): SearchProvider {
+	const doFetch = options?.fetchImpl ?? fetch;
+
 	return {
 		id: "brave",
 
-		async search(query, limit, signal, fetchImpl) {
+		async search(query, limit, signal) {
 			const key = expandEnvRef(apiKey);
 			if (!key) {
 				throw new Error("Brave provider selected but no API key configured (webSearch.braveApiKey).");
 			}
 
-			const doFetch = fetchImpl ?? fetch;
 			const url = `${ENDPOINT}?q=${encodeURIComponent(query)}&count=${Math.min(limit, 20)}&search_lang=en`;
 
 			let response: Response;

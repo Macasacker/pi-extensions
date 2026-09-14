@@ -2,7 +2,7 @@
 // and Brave JSON. Uses injected fake fetch — no network.
 import assert from "node:assert/strict";
 import { test, finish } from "./harness.mjs";
-import { duckduckgoProvider } from "../src/providers/duckduckgo.ts";
+import { createDuckDuckGoProvider } from "../src/providers/duckduckgo.ts";
 import { createBraveProvider, expandEnvRef } from "../src/providers/brave.ts";
 
 function fakeFetch(body, { status = 200, json = false } = {}) {
@@ -33,7 +33,7 @@ const DUCKDUCKGO_HTML_FIXTURE = `
 </body></html>`;
 
 await test("duckduckgo: decodes uddg redirect wrappers to real URLs", async () => {
-	const results = await duckduckgoProvider.search("mdn", 10, new AbortController().signal, fakeFetch(DUCKDUCKGO_HTML_FIXTURE));
+	const results = await createDuckDuckGoProvider({ fetchImpl: fakeFetch(DUCKDUCKGO_HTML_FIXTURE) }).search("mdn", 10, new AbortController().signal);
 	assert.equal(results.length, 3, "the 'more results' link must not count as a result");
 	assert.equal(results[0].url, "https://developer.mozilla.org/en-US/docs/Web");
 	assert.equal(results[0].title, "MDN Docs");
@@ -43,21 +43,21 @@ await test("duckduckgo: decodes uddg redirect wrappers to real URLs", async () =
 });
 
 await test("duckduckgo: respects the result limit", async () => {
-	const results = await duckduckgoProvider.search("mdn", 2, new AbortController().signal, fakeFetch(DUCKDUCKGO_HTML_FIXTURE));
+	const results = await createDuckDuckGoProvider({ fetchImpl: fakeFetch(DUCKDUCKGO_HTML_FIXTURE) }).search("mdn", 2, new AbortController().signal);
 	assert.equal(results.length, 2);
 });
 
 await test("duckduckgo: detects challenge pages and suggests Brave", async () => {
 	const challenge = `<html><body><form id="challenge-form"><p>Please try again later. Not A Robot check.</p></form></body></html>`;
 	await assert.rejects(
-		() => duckduckgoProvider.search("x", 5, new AbortController().signal, fakeFetch(challenge)),
+		() => createDuckDuckGoProvider({ fetchImpl: fakeFetch(challenge) }).search("x", 5, new AbortController().signal),
 		/Brave|challenge/i,
 	);
 });
 
 await test("duckduckgo: non-OK status throws a helpful error", async () => {
 	await assert.rejects(
-		() => duckduckgoProvider.search("x", 5, new AbortController().signal, fakeFetch("blocked", { status: 403 })),
+		() => createDuckDuckGoProvider({ fetchImpl: fakeFetch("blocked", { status: 403 }) }).search("x", 5, new AbortController().signal),
 		/HTTP 403|Brave/,
 	);
 });
@@ -72,8 +72,8 @@ await test("brave: parses web.results JSON", async () => {
 			],
 		},
 	};
-	const provider = createBraveProvider("test-key");
-	const results = await provider.search("q", 2, new AbortController().signal, fakeFetch(body, { json: true }));
+	const provider = createBraveProvider("test-key", { fetchImpl: fakeFetch(body, { json: true }) });
+	const results = await provider.search("q", 2, new AbortController().signal);
 	assert.equal(results.length, 2);
 	assert.equal(results[0].url, "https://a.example/1");
 	assert.equal(results[0].snippet, "desc1");
@@ -85,9 +85,9 @@ await test("brave: missing key throws", async () => {
 });
 
 await test("brave: bad key surfaces 401", async () => {
-	const provider = createBraveProvider("bad-key");
+	const provider = createBraveProvider("bad-key", { fetchImpl: fakeFetch("unauthorized", { status: 401, json: true }) });
 	await assert.rejects(
-		() => provider.search("q", 5, new AbortController().signal, fakeFetch("unauthorized", { status: 401, json: true })),
+		() => provider.search("q", 5, new AbortController().signal),
 		/rejected the key/i,
 	);
 });

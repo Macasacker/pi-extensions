@@ -12,5 +12,5 @@ export interface SearchProvider {
 	 * Search the web. Implementations must respect `signal` and throw a
 	 * descriptive error when the backend is unusable (e.g. DDG challenge page).
 	 */
-	search(query: string, limit: number, signal: AbortSignal, fetchImpl?: typeof fetch): Promise<SearchResult[]>;
+	search(query: string, limit: number, signal: AbortSignal): Promise<SearchResult[]>;
 }

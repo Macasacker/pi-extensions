@@ -39,54 +39,59 @@ function decodeDdgHref(href: string): string | null {
 
 const CHALLENGE_MARKERS = ["challenge-form", "anomaly", "not a robot", "please try again later", "unusual traffic"];
 
-export const duckduckgoProvider: SearchProvider = {
-	id: "duckduckgo",
+export function createDuckDuckGoProvider(options?: { fetchImpl?: typeof fetch }): SearchProvider {
+	const doFetch = options?.fetchImpl ?? fetch;
 
-	async search(query, limit, signal, fetchImpl) {
-		const doFetch = fetchImpl ?? fetch;
-		const url = `${ENDPOINT}?q=${encodeURIComponent(query)}`;
+	return {
+		id: "duckduckgo",
 
-		let response: Response;
-		try {
-			response = await doFetch(url, {
-				method: "GET",
-				signal,
-				headers: {
-					"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0",
-					Accept: "text/html,application/xhtml+xml",
-					"Accept-Language": "en-US,en;q=0.9",
-				},
-			});
-		} catch (error) {
-			if (signal.aborted) throw new Error("Search cancelled");
-			throw new Error(`DuckDuckGo request failed: ${error instanceof Error ? error.message : String(error)}`);
-		}
+		async search(query, limit, signal) {
+			const url = `${ENDPOINT}?q=${encodeURIComponent(query)}`;
 
-		if (!response.ok) {
-			throw new Error(`DuckDuckGo returned HTTP ${response.status}. Consider configuring the Brave provider (webSearch.provider: "brave" + braveApiKey).`);
-		}
+			let response: Response;
+			try {
+				response = await doFetch(url, {
+					method: "GET",
+					signal,
+					headers: {
+						"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0",
+						Accept: "text/html,application/xhtml+xml",
+						"Accept-Language": "en-US,en;q=0.9",
+					},
+				});
+			} catch (error) {
+				if (signal.aborted) throw new Error("Search cancelled");
+				throw new Error(`DuckDuckGo request failed: ${error instanceof Error ? error.message : String(error)}`);
+			}
 
-		const html = await readCappedText(response, MAX_BODY_BYTES);
-		if (CHALLENGE_MARKERS.some((challengeMarker) => html.toLowerCase().includes(challengeMarker)) && !html.includes("result__a")) {
-			throw new Error(
-				"DuckDuckGo served a challenge page (likely rate limiting or datacenter IP). " +
-					"Retry later, or configure the Brave provider (webSearch.provider: \"brave\" + braveApiKey) for reliable results.",
-			);
-		}
+			if (!response.ok) {
+				throw new Error(`DuckDuckGo returned HTTP ${response.status}. Consider configuring the Brave provider (webSearch.provider: "brave" + braveApiKey).`);
+			}
 
-		const root = parse(html);
-		const results: SearchResult[] = [];
-		for (const item of root.querySelectorAll(".result")) {
-			const resultLink = item.querySelector("a.result__a");
-			const resultHref = resultLink?.getAttribute("href");
-			const realUrl = resultHref ? decodeDdgHref(resultHref) : null;
-			if (!realUrl) continue;
-			const title = sanitizeForTui(resultLink?.text?.trim() ?? "");
-			const snippet = sanitizeForTui(item.querySelector(".result__snippet")?.text?.trim() ?? "");
-			if (!title) continue;
-			results.push({ title, url: realUrl, snippet });
-			if (results.length >= limit) break;
-		}
-		return results;
-	},
-};
+			const html = await readCappedText(response, MAX_BODY_BYTES);
+			if (CHALLENGE_MARKERS.some((challengeMarker) => html.toLowerCase().includes(challengeMarker)) && !html.includes("result__a")) {
+				throw new Error(
+					"DuckDuckGo served a challenge page (likely rate limiting or datacenter IP). " +
+						"Retry later, or configure the Brave provider (webSearch.provider: \"brave\" + braveApiKey) for reliable results.",
+				);
+			}
+
+			const root = parse(html);
+			const results: SearchResult[] = [];
+			for (const item of root.querySelectorAll(".result")) {
+				const resultLink = item.querySelector("a.result__a");
+				const resultHref = resultLink?.getAttribute("href");
+				const realUrl = resultHref ? decodeDdgHref(resultHref) : null;
+				if (!realUrl) continue;
+				const title = sanitizeForTui(resultLink?.text?.trim() ?? "");
+				const snippet = sanitizeForTui(item.querySelector(".result__snippet")?.text?.trim() ?? "");
+				if (!title) continue;
+				results.push({ title, url: realUrl, snippet });
+				if (results.length >= limit) break;
+			}
+			return results;
+		},
+	};
+}
+
+export const duckduckgoProvider = createDuckDuckGoProvider(); // default instance (production)

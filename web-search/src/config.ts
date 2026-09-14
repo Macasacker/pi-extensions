@@ -74,6 +74,20 @@ export const BUILTIN_DEFAULTS: WebSearchConfig = {
 	blockPrivateNetworks: true,
 };
 
+/**
+ * Per-key bounds for the numeric settings — the single source of truth for
+ * the min/max values applied by `clampInt` in `loadConfig`'s merge.
+ */
+const NUMERIC_LIMITS = {
+	maxResults: { min: 1, max: 20 },
+	maxContentChars: { min: 1000, max: 100000 },
+	maxDownloadBytes: { min: 1024, max: 10 * 1024 * 1024 },
+	timeoutMs: { min: 1000, max: 120000 },
+	maxRedirects: { min: 0, max: 10 },
+} as const;
+
+type NumericConfigKey = keyof typeof NUMERIC_LIMITS;
+
 const CONFIG_DIR = ".pi";
 
 export function globalSettingsPath(): string {
@@ -131,15 +145,11 @@ export function sanitizeDomainEntry(entry: unknown): string {
 /**
  * Load and merge configuration for a session.
  *
- * @param cwd            current working directory (project settings source)
- * @param projectTrusted whether project-local settings may be honored
- * @param home           override for tests
+ * @param options.cwd            current working directory (project settings source)
+ * @param options.projectTrusted whether project-local settings may be honored
+ * @param options.homeDir        override for tests (defaults to os.homedir())
  */
-export function loadConfig(
-	cwd: string,
-	projectTrusted: boolean,
-	home: string = os.homedir(),
-): LoadedConfig {
+export function loadConfig({ cwd, projectTrusted, homeDir = os.homedir() }: { cwd: string; projectTrusted: boolean; homeDir?: string }): LoadedConfig {
 	const config: WebSearchConfig = { ...BUILTIN_DEFAULTS, allowedDomains: [...BUILTIN_DEFAULTS.allowedDomains] };
 	const domainSources: DomainSource[] = [];
 	if (config.useBuiltins) {
@@ -158,11 +168,10 @@ export function loadConfig(
 		config.useBuiltins = asBool(webSearchSettings.useBuiltins, config.useBuiltins);
 		config.allowSubdomains = asBool(webSearchSettings.allowSubdomains, config.allowSubdomains);
 		config.confirmOutsideAllowlist = asBool(webSearchSettings.confirmOutsideAllowlist, config.confirmOutsideAllowlist);
-		config.maxResults = clampInt(webSearchSettings.maxResults, 1, 20, config.maxResults);
-		config.maxContentChars = clampInt(webSearchSettings.maxContentChars, 1000, 100000, config.maxContentChars);
-		config.maxDownloadBytes = clampInt(webSearchSettings.maxDownloadBytes, 1024, 10 * 1024 * 1024, config.maxDownloadBytes);
-		config.timeoutMs = clampInt(webSearchSettings.timeoutMs, 1000, 120000, config.timeoutMs);
-		config.maxRedirects = clampInt(webSearchSettings.maxRedirects, 0, 10, config.maxRedirects);
+		for (const key of Object.keys(NUMERIC_LIMITS) as NumericConfigKey[]) {
+			const limits = NUMERIC_LIMITS[key];
+			config[key] = clampInt(webSearchSettings[key], limits.min, limits.max, config[key]);
+		}
 		config.blockPrivateNetworks = asBool(webSearchSettings.blockPrivateNetworks, config.blockPrivateNetworks);
 
 		if (webSearchSettings.useBuiltins === false) {
@@ -190,7 +199,7 @@ export function loadConfig(
 		}
 	};
 
-	const globalPath = path.join(home, CONFIG_DIR, "agent", "settings.json");
+	const globalPath = path.join(homeDir, CONFIG_DIR, "agent", "settings.json");
 	merge(globalPath);
 	if (projectTrusted) merge(projectSettingsPath(cwd));
 
