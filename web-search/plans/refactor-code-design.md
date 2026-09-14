@@ -1,8 +1,8 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: Phase 4 committed.** Phases 0–4 are committed (see git log).
-> Phases 5–7 are in progress — executing per the Orchestration Convention
-> (see `plans/refactor-ledger.md`).
+> **STATUS: PAUSED at the phase 5 boundary** (user instruction, 2026-09-14).
+> Phases 0–4 are committed (see git log). Phases 5–7 below are approved but
+> not started. See `plans/refactor-ledger.md` for the full state.
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
 `code-design` skill (SRP, variable design, function design, purity, control flow,

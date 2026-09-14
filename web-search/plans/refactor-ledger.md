@@ -1,9 +1,8 @@
 # Ledger: web-search code-design refactor
 
-Status: **PHASE 4 COMPLETE — review Verdict: Ready + both Optional findings
-fixed (new reset-rebind e2e test, de-degenerated diff test); committing, then
-phase 5 (index.ts decomposition, items 16–21; ends with a live `pi -p` smoke
-test).** Orchestrator: main session.
+Status: **PAUSED at the phase 5 boundary (user instruction, 2026-09-14).**
+Phases 0–4 are committed (phase 4: `b9145a1` code, `e9e75aa` docs). Phases
+5–7 are approved but not started. Orchestrator: main session.
 Loop per phase (per AGENTS.md Orchestration Convention): one implementation
 subagent scoped to the phase (follows the `code-design` skill, runs the
 validation gates, no commits) → orchestrator verifies the diff and re-runs the
@@ -108,10 +107,9 @@ domain concept, e.g. `e` in a catch clause → `error`): `res`→`response`,
 
 ## Not started
 
-- Phases 3–7 of `plans/refactor-code-design.md` (signature cleanup, session
-  state encapsulation, index.ts decomposition, control-flow polish, hygiene
-  sweep). Phases 5 and 6 additionally end with a live `pi -p` smoke test;
-  phase 6 with a fresh adversarial review pass.
+- Phases 5–7 of `plans/refactor-code-design.md` (index.ts decomposition,
+  control-flow polish, hygiene sweep). Phases 5 and 6 additionally end with a
+  live `pi -p` smoke test; phase 6 with a fresh adversarial review pass.
 
 ## Decision (resolved 2026-09-14)
 
@@ -207,16 +205,16 @@ fix subagent before commit:
   the object at registration makes exactly this test fail).
 - the "unsorted inputs" `diffAllowlists` test de-degenerated (genuinely
   unsorted inputs, ≥2 added/removed, compared as sets).
-Suite is now 106 tests; all gates re-run green after the fixes.
+Suite is now 106 tests; all gates re-run green after the fixes. Phase 4
+committed as `b9145a1` (code + tests) and `e9e75aa` (plan + ledger).
 
-After all waves: orchestrator verifies full diff + re-runs gates → independent
-adversarial review over the whole phase-4 diff → fix loop → commit → mark plan
-items 12–15 `[DONE]` → phase 5 (index.ts decomposition, items 16–21; ends
-with a live `pi -p` smoke test).
+## Next action (paused)
 
-## Next action
-
-Commit phase 4 (code + tests + docs), then start phase 5 (index.ts
-decomposition, items 16–21): per-file worklist for `src/tools/search.ts`,
-`src/tools/fetch.ts`, `src/commands/domains.ts`, `src/commands/status.ts`,
-shrunk index.ts; ends with full `npm test` + live `pi -p` smoke test.
+Phase 5 (index.ts decomposition, items 16–21): per-file worklist for
+`src/tools/search.ts`, `src/tools/fetch.ts`, `src/commands/domains.ts`,
+`src/commands/status.ts`, shrunk index.ts (≤ ~150 lines); ends with full
+`npm test` + live `pi -p` smoke test. Smoke prerequisites verified at pause:
+`pi` binary at `/home/mac/.local/share/pi-node/node-v22.22.3-linux-x64/bin/pi`,
+extension registered in `~/.pi/agent/settings.json` (`webSearch.allowedDomains`
+non-empty). Awaiting the user's go-ahead before dispatching the first phase-5
+subagent.
