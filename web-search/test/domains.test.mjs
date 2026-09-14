@@ -1,7 +1,7 @@
 // Domain allowlist matcher — the security-critical bypass matrix.
 import assert from "node:assert/strict";
 import { test, finish } from "./harness.mjs";
-import { checkUrl, normalizeHost, isPrivateIp } from "../src/domains.ts";
+import { checkUrl, normalizeHost, isPrivateIp, diffAllowlists } from "../src/domains.ts";
 
 const baseSettings = { allowedDomains: ["example.com", "docs.python.org"], allowSubdomains: true, blockPrivateNetworks: true };
 
@@ -181,6 +181,83 @@ await test("isPrivateIp unit checks", () => {
 	assert.equal(isPrivateIp("fd12:3456::1"), true); // ULA
 	assert.equal(isPrivateIp("2606:4700:4700::1111"), false);
 	assert.equal(isPrivateIp("example.com"), false);
+});
+
+// diffAllowlists — pure allowlist drift diff (drift detection).
+// Contract: the caller passes sorted copies; `previous` is null on the first call.
+
+await test("should return null when previous is null (first call records a baseline, nothing to compare)", () => {
+	const previousAllowlist = null;
+	const currentAllowlist = ["example.com", "docs.python.org"];
+
+	const diffResult = diffAllowlists(previousAllowlist, currentAllowlist);
+
+	assert.equal(diffResult, null);
+});
+
+await test("should return empty added and removed lists when both allowlists are identical", () => {
+	const previousAllowlist = ["example.com", "docs.python.org"];
+	const currentAllowlist = ["example.com", "docs.python.org"];
+
+	const diffResult = diffAllowlists(previousAllowlist, currentAllowlist);
+
+	assert.deepEqual(diffResult, { added: [], removed: [] });
+});
+
+await test("should list the new domains as added when the allowlist only grows", () => {
+	const previousAllowlist = ["example.com"];
+	const currentAllowlist = ["example.com", "docs.python.org", "news.ycombinator.com"];
+
+	const diffResult = diffAllowlists(previousAllowlist, currentAllowlist);
+
+	assert.deepEqual(diffResult, { added: ["docs.python.org", "news.ycombinator.com"], removed: [] });
+});
+
+await test("should list the dropped domains as removed when the allowlist only shrinks", () => {
+	const previousAllowlist = ["example.com", "docs.python.org"];
+	const currentAllowlist = ["example.com"];
+
+	const diffResult = diffAllowlists(previousAllowlist, currentAllowlist);
+
+	assert.deepEqual(diffResult, { added: [], removed: ["docs.python.org"] });
+});
+
+await test("should list both added and removed domains when the allowlist changed in both directions", () => {
+	const previousAllowlist = ["example.com", "docs.python.org"];
+	const currentAllowlist = ["example.com", "news.ycombinator.com"];
+
+	const diffResult = diffAllowlists(previousAllowlist, currentAllowlist);
+
+	assert.deepEqual(diffResult, { added: ["news.ycombinator.com"], removed: ["docs.python.org"] });
+});
+
+await test("should report the same set of added and removed domains when inputs are unsorted (membership, not position, determines the diff)", () => {
+	// Both inputs are deliberately out of order, and added and removed each
+	// span multiple domains whose relative order differs from the sorted
+	// inputs — a position-sensitive diff would not survive this comparison.
+	const unsortedPrevious = ["example.com", "docs.python.org", "old.example.org"];
+	const unsortedCurrent = ["news.ycombinator.com", "example.com", "fresh.example.net"];
+	const sortedPrevious = [...unsortedPrevious].sort();
+	const sortedCurrent = [...unsortedCurrent].sort();
+
+	const unsortedDiff = diffAllowlists(unsortedPrevious, unsortedCurrent);
+	const sortedDiff = diffAllowlists(sortedPrevious, sortedCurrent);
+
+	const expectedAdded = ["fresh.example.net", "news.ycombinator.com"];
+	const expectedRemoved = ["docs.python.org", "old.example.org"];
+	assert.deepEqual([...unsortedDiff.added].sort(), expectedAdded);
+	assert.deepEqual([...unsortedDiff.removed].sort(), expectedRemoved);
+	assert.deepEqual([...sortedDiff.added].sort(), expectedAdded);
+	assert.deepEqual([...sortedDiff.removed].sort(), expectedRemoved);
+});
+
+await test("should not report a domain as added or removed when it appears in both allowlists, even if duplicated", () => {
+	const previousAllowlist = ["example.com", "example.com"];
+	const currentAllowlist = ["example.com", "example.com"];
+
+	const diffResult = diffAllowlists(previousAllowlist, currentAllowlist);
+
+	assert.deepEqual(diffResult, { added: [], removed: [] });
 });
 
 finish();

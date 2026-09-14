@@ -154,3 +154,22 @@ export function checkUrl(rawUrl: string, opts: AllowlistOptions): DomainCheck {
 
 	return { allowed: false, host, reason: `Domain ${host} is not in the allowlist` };
 }
+
+/**
+ * Diff two allowlists (drift detection).
+ *
+ * Contract: both inputs are sorted copies of the live allowlists — the caller
+ * sorts before comparing, so this function is order-independent and never
+ * re-sorts. `previous` is `null` on the first call (no baseline recorded yet),
+ * in which case there is nothing to compare and `null` is returned.
+ *
+ * @param previous allowlist recorded at the previous check, or `null` (first call)
+ * @param current  the allowlist as it is now (sorted)
+ * @returns `null` when there is no baseline, otherwise `{ added, removed }` (both possibly empty)
+ */
+export function diffAllowlists(previous: string[] | null, current: string[]): { added: string[]; removed: string[] } | null {
+	if (previous === null) return null;
+	const added = current.filter((domain) => !previous.includes(domain));
+	const removed = previous.filter((domain) => !current.includes(domain));
+	return { added, removed };
+}

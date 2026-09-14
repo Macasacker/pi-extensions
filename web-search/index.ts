@@ -31,7 +31,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { Text, matchesKey } from "@earendil-works/pi-tui";
 
-import { checkUrl, type AllowlistOptions } from "./src/domains.ts";
+import { checkUrl, diffAllowlists, type AllowlistOptions } from "./src/domains.ts";
 import {
 	loadConfig,
 	globalSettingsPath,
@@ -54,6 +54,11 @@ import {
 	type SearchDetails,
 	type FetchDetails,
 } from "./src/render.ts";
+import { createSessionState, type SessionState } from "./src/session.ts";
+import { getTestProvider } from "./src/test-seam.ts";
+
+// The e2e suite imports this from index.ts — re-exported from the seam module.
+export { setTestProvider } from "./src/test-seam.ts";
 
 // ---------------------------------------------------------------------------
 // session state
@@ -66,38 +71,17 @@ interface LogData {
 	detail?: string;
 }
 
-let sessionGrants: Set<string> = new Set();
-let sessionCalls = 0;
-let warnedBrave = false;
-let warnedEmptyAllowlist = false;
-// Effective allowlist as seen by the last tool call — used to detect
-// out-of-band changes (e.g. the agent editing settings.json directly).
-let lastAllowlist: string[] | null = null;
-
-// Test seam: substitute the search provider so tests run without network.
-let providerOverride: SearchProvider | undefined;
-export function setTestProvider(provider: SearchProvider | undefined): void {
-	providerOverride = provider;
-}
-
-function resetSessionState(): void {
-	sessionGrants = new Set();
-	sessionCalls = 0;
-	warnedBrave = false;
-	warnedEmptyAllowlist = false;
-	lastAllowlist = null;
-}
-
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 
-function getProvider(config: WebSearchConfig, ctx?: ExtensionContext): SearchProvider {
-	if (providerOverride) return providerOverride;
+function getProvider(config: WebSearchConfig, session: SessionState, ctx?: ExtensionContext): SearchProvider {
+	const testProvider = getTestProvider();
+	if (testProvider) return testProvider;
 	if (config.provider === "brave") {
 		if (expandEnvRef(config.braveApiKey)) return createBraveProvider(config.braveApiKey);
-		if (ctx?.hasUI && !warnedBrave) {
-			warnedBrave = true;
+		if (ctx?.hasUI && !session.warnedBrave) {
+			session.warnedBrave = true;
 			ctx.ui.notify("web-search: Brave selected but no API key found — falling back to DuckDuckGo", "warning");
 		}
 		return duckduckgoProvider;
@@ -105,19 +89,19 @@ function getProvider(config: WebSearchConfig, ctx?: ExtensionContext): SearchPro
 	return duckduckgoProvider;
 }
 
-function buildAllowlistOptions(config: WebSearchConfig): AllowlistOptions {
+function buildAllowlistOptions(config: WebSearchConfig, session: SessionState): AllowlistOptions {
 	return {
 		allowedDomains: config.allowedDomains,
 		allowSubdomains: config.allowSubdomains,
 		blockPrivateNetworks: config.blockPrivateNetworks,
-		grantedHosts: sessionGrants,
+		grantedHosts: session.grants,
 	};
 }
 
-function recordSessionCall(ctx: ExtensionContext): void {
-	sessionCalls += 1;
+function recordSessionCall(session: SessionState, ctx: ExtensionContext): void {
+	session.callCount += 1;
 	try {
-		ctx.ui.setStatus("web-search", `${sessionCalls} web call(s) this session`);
+		ctx.ui.setStatus("web-search", `${session.callCount} web call(s) this session`);
 	} catch {
 		// status is cosmetic
 	}
@@ -142,30 +126,31 @@ function logCall(pi: ExtensionAPI, ctx: ExtensionContext, entry: LogData): void 
  * command flow is surfaced as a warning + session log entry instead of being
  * applied silently.
  */
-function checkAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, config: WebSearchConfig): void {
+function checkAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, config: WebSearchConfig, session: SessionState): void {
 	const current = [...config.allowedDomains].sort();
-	if (lastAllowlist) {
-		const previousAllowlist = lastAllowlist;
-		const added = current.filter((domain) => !previousAllowlist.includes(domain));
-		const removed = previousAllowlist.filter((domain) => !current.includes(domain));
-		if (added.length > 0 || removed.length > 0) {
-			const parts = ["web-search: allowlist changed during session"];
-			if (added.length > 0) parts.push(`added: ${added.join(", ")}`);
-			if (removed.length > 0) parts.push(`removed: ${removed.join(", ")}`);
-			parts.push("If you didn't make this change, check who edited your settings (an agent can edit settings.json with the built-in file tools).");
-			if (ctx.hasUI) ctx.ui.notify(parts.join(" — "), "warning");
-			logCall(pi, ctx, { kind: "config", target: "allowlist", ok: true, detail: `${added.length} added, ${removed.length} removed` });
-		}
+	const diff = diffAllowlists(session.lastAllowlist, current);
+	if (diff && (diff.added.length > 0 || diff.removed.length > 0)) {
+		reportAllowlistDrift(pi, ctx, diff);
 	}
-	lastAllowlist = current;
+	session.lastAllowlist = current;
+}
+
+/** Surface a detected allowlist change: user-visible warning + session log entry. */
+function reportAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, diff: { added: string[]; removed: string[] }): void {
+	const parts = ["web-search: allowlist changed during session"];
+	if (diff.added.length > 0) parts.push(`added: ${diff.added.join(", ")}`);
+	if (diff.removed.length > 0) parts.push(`removed: ${diff.removed.join(", ")}`);
+	parts.push("If you didn't make this change, check who edited your settings (an agent can edit settings.json with the built-in file tools).");
+	if (ctx.hasUI) ctx.ui.notify(parts.join(" — "), "warning");
+	logCall(pi, ctx, { kind: "config", target: "allowlist", ok: true, detail: `${diff.added.length} added, ${diff.removed.length} removed` });
 }
 
 /** Called by /web-search-domains after it writes settings, so user-initiated changes don't trigger the drift warning. */
-function noteAllowlistChange(ctx: ExtensionContext): void {
+function noteAllowlistChange(ctx: ExtensionContext, session: SessionState): void {
 	try {
-		lastAllowlist = [...loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false }).config.allowedDomains].sort();
+		session.lastAllowlist = [...loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false }).config.allowedDomains].sort();
 	} catch {
-		lastAllowlist = null;
+		session.lastAllowlist = null;
 	}
 }
 
@@ -175,9 +160,9 @@ function assertEnabled(config: WebSearchConfig): void {
 	}
 }
 
-function warnIfAllowlistEmpty(config: WebSearchConfig, ctx: ExtensionContext): void {
-	if (config.allowedDomains.length === 0 && !warnedEmptyAllowlist) {
-		warnedEmptyAllowlist = true;
+function warnIfAllowlistEmpty(config: WebSearchConfig, session: SessionState, ctx: ExtensionContext): void {
+	if (config.allowedDomains.length === 0 && !session.warnedEmptyAllowlist) {
+		session.warnedEmptyAllowlist = true;
 		if (ctx.hasUI) ctx.ui.notify("web-search: allowlist is empty — every fetch will be blocked. Use /web-search-domains to add domains.", "warning");
 	}
 }
@@ -209,10 +194,10 @@ class DismissableText extends Text {
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
-	resetSessionState();
+	let session = createSessionState();
 
 	pi.on("session_start", (_event, ctx) => {
-		resetSessionState();
+		session = createSessionState();
 		try {
 			ctx.ui.setStatus("web-search", undefined);
 		} catch {
@@ -220,7 +205,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 	pi.on("session_shutdown", () => {
-		resetSessionState();
+		session = createSessionState();
 	});
 
 	// -- web_search ----------------------------------------------------------
@@ -248,10 +233,10 @@ export default function (pi: ExtensionAPI) {
 				logCall(pi, ctx, { kind: "search", target: params.query, ok: false, detail: "disabled (webSearch.enabled: false)" });
 				throw error;
 			}
-			warnIfAllowlistEmpty(config, ctx);
-			checkAllowlistDrift(pi, ctx, config);
+			warnIfAllowlistEmpty(config, session, ctx);
+			checkAllowlistDrift(pi, ctx, config, session);
 
-			const provider = getProvider(config, ctx);
+			const provider = getProvider(config, session, ctx);
 			onUpdate?.({ content: [{ type: "text", text: `Searching: ${sanitizeForTui(params.query)}` }], details: {} });
 
 			let searchResults: SearchResult[];
@@ -266,7 +251,7 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text", text: "Cancelled" }], details: {} };
 			}
 
-			const allowlistOptions = buildAllowlistOptions(config);
+			const allowlistOptions = buildAllowlistOptions(config, session);
 			const allowed: SearchDetails["results"] = [];
 			let hidden = 0;
 			for (const result of searchResults) {
@@ -289,7 +274,7 @@ export default function (pi: ExtensionAPI) {
 				if (hidden > 0) text += `\n\n(${hidden} result(s) hidden: domain not in allowlist)`;
 			}
 
-			recordSessionCall(ctx);
+			recordSessionCall(session, ctx);
 			logCall(pi, ctx, { kind: "search", target: params.query, ok: true, detail: `${allowed.length} allowed, ${hidden} hidden (provider: ${provider.id})` });
 			return {
 				content: [{ type: "text", text }],
@@ -325,10 +310,10 @@ export default function (pi: ExtensionAPI) {
 				logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: "disabled (webSearch.enabled: false)" });
 				throw error;
 			}
-			warnIfAllowlistEmpty(config, ctx);
-			checkAllowlistDrift(pi, ctx, config);
+			warnIfAllowlistEmpty(config, session, ctx);
+			checkAllowlistDrift(pi, ctx, config, session);
 
-			let allowlistOptions = buildAllowlistOptions(config);
+			let allowlistOptions = buildAllowlistOptions(config, session);
 			let check = checkUrl(params.url, allowlistOptions);
 
 			// Only offer the confirm flow for http(s) URLs: a scheme-blocked URL
@@ -353,8 +338,8 @@ export default function (pi: ExtensionAPI) {
 						logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: `blocked: ${check.host} not allowed (user declined)` });
 						throw new FetchBlockedError(params.url, `${check.reason ?? "not allowed"} (user declined confirmation)`);
 					}
-					sessionGrants.add(check.host);
-					allowlistOptions = buildAllowlistOptions(config);
+					session.grants.add(check.host);
+					allowlistOptions = buildAllowlistOptions(config, session);
 					check = checkUrl(params.url, allowlistOptions);
 					if (!check.allowed) throw new FetchBlockedError(params.url, check.reason ?? "not allowed");
 				} else {
@@ -421,7 +406,7 @@ export default function (pi: ExtensionAPI) {
 					`Try an alternate endpoint (e.g. a .rss or .json variant, or an old- variant of the site).]`;
 			}
 
-			recordSessionCall(ctx);
+			recordSessionCall(session, ctx);
 			logCall(pi, ctx, {
 				kind: "fetch",
 				target: params.url,
@@ -476,7 +461,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				updateSettingsDomains(target, (allowlist) => (allowlist.some((existingDomain) => existingDomain.toLowerCase() === domain) ? allowlist : [...allowlist, domain]));
-				noteAllowlistChange(ctx);
+				noteAllowlistChange(ctx, session);
 				ctx.ui.notify(`Added ${domain} to ${scopeProject ? "project" : "global"} allowlist — effective immediately`, "info");
 				return;
 			}
@@ -496,7 +481,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				updateSettingsDomains(target, (allowlist) => allowlist.filter((existingDomain) => existingDomain.toLowerCase() !== domain));
-				noteAllowlistChange(ctx);
+				noteAllowlistChange(ctx, session);
 				ctx.ui.notify(`Removed ${domain} from ${scopeProject ? "project" : "global"} allowlist — effective immediately`, "info");
 				return;
 			}
@@ -538,7 +523,7 @@ export default function (pi: ExtensionAPI) {
 				`provider: ${config.provider}${config.provider === "brave" ? (expandEnvRef(config.braveApiKey) ? " (key set)" : " (NO KEY — falling back to duckduckgo)") : ""}`,
 				`allowlist: ${config.allowedDomains.length} domain(s) [${config.allowedDomains.slice(0, 8).join(", ")}${config.allowedDomains.length > 8 ? ", …" : ""}]`,
 				`limits: ${config.maxResults} results, ${config.maxContentChars} chars, ${Math.round(config.maxDownloadBytes / 1024)}KB, ${config.timeoutMs / 1000}s timeout, ${config.maxRedirects} redirects`,
-				`session: ${sessionCalls} call(s), ${sessionGrants.size} granted host(s)${sessionGrants.size ? ` (${[...sessionGrants].join(", ")})` : ""}`,
+				`session: ${session.callCount} call(s), ${session.grants.size} granted host(s)${session.grants.size ? ` (${[...session.grants].join(", ")})` : ""}`,
 			];
 			ctx.ui.notify(lines.join("\n"), "info");
 		},

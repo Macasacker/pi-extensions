@@ -52,10 +52,17 @@ const commands = {};
 const logEntries = [];
 const notifications = [];
 const confirms = [];
+// Session lifecycle handlers (session_start / session_shutdown) recorded at
+// registration time so tests can fire them. A no-op `on` would let a
+// reset-rebind regression (capturing the session object at registration
+// instead of reading the closure variable at call time) pass the whole suite.
+const sessionEventHandlers = {};
 let confirmAnswer = true;
 let lastCustomComponent = null;
 const mockExtensionApi = {
-	on: () => {},
+	on: (event, handler) => {
+		(sessionEventHandlers[event] ??= []).push(handler);
+	},
 	registerTool: (toolDefinition) => {
 		tools[toolDefinition.name] = toolDefinition;
 	},
@@ -142,6 +149,39 @@ await test("confirmOutsideAllowlist grants a session-scoped exception", async ()
 	const secondFetchResult = await tools.web_fetch.execute("tc4", { url: `http://localhost:${port}/page` }, signal, undefined, mockContext);
 	assert.equal(secondFetchResult.details.status, 200);
 	assert.equal(confirms.length, 1, "second fetch to same host uses the session grant, no re-prompt");
+});
+
+await test("should clear session grants and call counts when session_shutdown fires", async () => {
+	writeGlobalConfig({
+		webSearch: {
+			useBuiltins: false,
+			allowedDomains: [],
+			blockPrivateNetworks: true,
+			confirmOutsideAllowlist: true,
+		},
+	});
+	const resetUrl = `http://127.0.0.1:${port}/page`; // ungranted at this point in the suite
+	const confirmsBefore = confirms.length;
+	confirmAnswer = true;
+
+	const firstFetchResult = await tools.web_fetch.execute("tc20", { url: resetUrl }, signal, undefined, mockContext);
+	assert.equal(firstFetchResult.details.status, 200);
+	assert.equal(confirms.length, confirmsBefore + 1, "first fetch to an ungranted host prompts");
+
+	for (const handler of sessionEventHandlers["session_shutdown"]) handler();
+
+	const confirmsBeforeSecond = confirms.length;
+	confirmAnswer = false; // a leaked grant would skip the prompt and succeed
+	await assert.rejects(
+		() => tools.web_fetch.execute("tc21", { url: resetUrl }, signal, undefined, mockContext),
+		(error) => error instanceof FetchBlockedError && /declined/.test(error.message),
+	);
+	assert.equal(confirms.length, confirmsBeforeSecond + 1, "second fetch after the reset re-prompts (the grant is gone)");
+
+	const notificationsBefore = notifications.length;
+	await commands["web-search-status"].handler("", mockContext);
+	const statusNotification = notifications.slice(notificationsBefore).at(-1);
+	assert.match(statusNotification, /session: 0 call\(s\), 0 granted host\(s\)/, "status after the reset reports a fresh session");
 });
 
 await test("declined confirmation blocks the fetch", async () => {
