@@ -199,11 +199,11 @@ export function loadConfig(
 
 /**
  * Add or remove domains in a settings file (preserving all other keys).
+ * `mutate` receives the current list from the file and returns the next one.
  * Returns the path written.
  */
 export function updateSettingsDomains(
 	file: string,
-	domains: string[],
 	mutate: (list: string[]) => string[],
 ): string {
 	const settings = readSettingsJson(file) ?? {};

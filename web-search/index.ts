@@ -42,10 +42,10 @@ import {
 } from "./src/config.ts";
 import { extractReadableText, truncateText } from "./src/extract.ts";
 import { sanitizeForTui } from "./src/sanitize.ts";
-import { safeFetch, FetchBlockedError, FetchError } from "./src/fetch.ts";
+import { safeFetch, FetchBlockedError, FetchError, type SafeFetchResult } from "./src/fetch.ts";
 import { duckduckgoProvider } from "./src/providers/duckduckgo.ts";
 import { createBraveProvider, expandEnvRef } from "./src/providers/brave.ts";
-import type { SearchProvider } from "./src/providers/types.ts";
+import type { SearchProvider, SearchResult } from "./src/providers/types.ts";
 import {
 	renderSearchCall,
 	renderSearchResult,
@@ -246,7 +246,7 @@ export default function (pi: ExtensionAPI) {
 			const provider = getProvider(config, ctx);
 			onUpdate?.({ content: [{ type: "text", text: `Searching: ${sanitizeForTui(params.query)}` }], details: {} });
 
-			let raw;
+			let raw: SearchResult[];
 			try {
 				raw = await provider.search(params.query, params.max_results ?? config.maxResults, signal ?? new AbortController().signal);
 			} catch (err) {
@@ -354,7 +354,7 @@ export default function (pi: ExtensionAPI) {
 
 			onUpdate?.({ content: [{ type: "text", text: `Fetching ${sanitizeForTui(params.url)} …` }], details: {} });
 
-			let res;
+			let res: SafeFetchResult;
 			try {
 				res = await safeFetch(params.url, {
 					signal,
@@ -461,7 +461,7 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify("Project is not trusted; cannot modify project settings. Use global scope (omit --project).", "error");
 					return;
 				}
-				updateSettingsDomains(target, [domain], (list) => (list.some((d) => d.toLowerCase() === domain) ? list : [...list, domain]));
+				updateSettingsDomains(target, (list) => (list.some((d) => d.toLowerCase() === domain) ? list : [...list, domain]));
 				noteAllowlistChange(ctx);
 				ctx.ui.notify(`Added ${domain} to ${scopeProject ? "project" : "global"} allowlist — effective immediately`, "info");
 				return;
@@ -481,7 +481,7 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify("Project is not trusted; cannot modify project settings.", "error");
 					return;
 				}
-				updateSettingsDomains(target, [domain], (list) => list.filter((d) => d.toLowerCase() !== domain));
+				updateSettingsDomains(target, (list) => list.filter((d) => d.toLowerCase() !== domain));
 				noteAllowlistChange(ctx);
 				ctx.ui.notify(`Removed ${domain} from ${scopeProject ? "project" : "global"} allowlist — effective immediately`, "info");
 				return;

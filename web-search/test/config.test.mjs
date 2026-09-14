@@ -145,11 +145,11 @@ await test("updateSettingsDomains adds/removes and preserves other keys", () => 
 	try {
 		const file = path.join(env.home, ".pi", "agent", "settings.json");
 		fs.writeFileSync(file, JSON.stringify({ webSearch: { allowedDomains: ["a.io"] }, theme: "dark" }));
-		updateSettingsDomains(file, ["b.io"], (list) => [...list, "b.io"]);
+		updateSettingsDomains(file, (list) => [...list, "b.io"]);
 		let s = env.readGlobal();
 		assert.deepEqual(s.webSearch.allowedDomains, ["a.io", "b.io"]);
 		assert.equal(s.theme, "dark");
-		updateSettingsDomains(file, ["a.io"], (list) => list.filter((d) => d !== "a.io"));
+		updateSettingsDomains(file, (list) => list.filter((d) => d !== "a.io"));
 		s = env.readGlobal();
 		assert.deepEqual(s.webSearch.allowedDomains, ["b.io"]);
 		assert.equal(s.theme, "dark");

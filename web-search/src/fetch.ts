@@ -57,10 +57,11 @@ export interface SafeFetchOptions {
 	fetchImpl?: typeof fetch;
 }
 
-function combinedSignal(caller: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; cleanup: () => void } {
+function combinedSignal(caller: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+	// AbortSignal.timeout cannot be cancelled early; the timeout simply fires
+	// after the request completes (or the caller signal aborts first).
 	const timeout = AbortSignal.timeout(timeoutMs);
-	const signal = caller ? AbortSignal.any([caller, timeout]) : timeout;
-	return { signal, cleanup: () => {} };
+	return caller ? AbortSignal.any([caller, timeout]) : timeout;
 }
 
 export async function readBodyCapped(res: Response, maxBytes: number): Promise<{ body: string; bytes: number; truncated: boolean }> {
@@ -123,7 +124,7 @@ export async function safeFetch(url: string, opts: SafeFetchOptions): Promise<Sa
 			throw new FetchError(current, `too many redirects (max ${opts.maxRedirects})`);
 		}
 
-		const { signal, cleanup } = combinedSignal(opts.signal, opts.timeoutMs);
+		const signal = combinedSignal(opts.signal, opts.timeoutMs);
 		let res: Response;
 		try {
 			res = await doFetch(current, {
@@ -137,7 +138,6 @@ export async function safeFetch(url: string, opts: SafeFetchOptions): Promise<Sa
 				},
 			});
 		} catch (err) {
-			cleanup();
 			if (opts.signal?.aborted) throw new FetchError(current, "cancelled");
 			// AbortSignal.timeout rejects with name "TimeoutError"; plain aborts with "AbortError".
 			if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
@@ -150,7 +150,6 @@ export async function safeFetch(url: string, opts: SafeFetchOptions): Promise<Sa
 		if (res.status >= 300 && res.status < 400) {
 			const location = res.headers.get("location");
 			res.body?.cancel().catch(() => {});
-			cleanup();
 			if (!location) throw new FetchError(current, `redirect ${res.status} without Location header`);
 			let next: string;
 			try {
@@ -163,7 +162,6 @@ export async function safeFetch(url: string, opts: SafeFetchOptions): Promise<Sa
 			continue; // loop re-validates `current` at the top
 		}
 
-		cleanup();
 		if (res.status >= 400) {
 			res.body?.cancel().catch(() => {});
 			throw new FetchError(current, `HTTP ${res.status}`, res.status);

@@ -88,12 +88,15 @@ export interface Truncation {
 	outputChars: number;
 }
 
+// Backstop against pathologically long outputs even when maxChars is raised.
+const DEFAULT_MAX_LINES = 2000;
+
 /**
  * Truncate text to maxChars (and maxLines). Keeps the head — search/fetch
  * content is front-loaded. Mirrors pi's built-in tool truncation contract:
  * callers append a note telling the LLM where the full output went.
  */
-export function truncateText(text: string, maxChars: number, maxLines = 2000): Truncation {
+export function truncateText(text: string, maxChars: number, maxLines: number = DEFAULT_MAX_LINES): Truncation {
 	let content = text;
 	let truncated = false;
 
