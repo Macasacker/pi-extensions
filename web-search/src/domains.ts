@@ -123,8 +123,12 @@ export function isPrivateIp(host: string): boolean {
 /**
  * Check a full URL against the allowlist.
  * Never throws: unparseable URLs and bad schemes come back as `allowed: false`.
+ *
+ * The check runs in three stages: URL parsing, scheme validation (http/https
+ * only), and host matching — the IP-literal or the domain regime, chosen by
+ * the normalized host.
  */
-export function checkUrl(rawUrl: string, opts: AllowlistOptions): DomainCheck {
+export function checkUrl(rawUrl: string, allowlistOptions: AllowlistOptions): DomainCheck {
 	let parsedUrl: URL;
 	try {
 		parsedUrl = new URL(rawUrl);
@@ -132,9 +136,8 @@ export function checkUrl(rawUrl: string, opts: AllowlistOptions): DomainCheck {
 		return { allowed: false, reason: `Not a valid URL: ${rawUrl}` };
 	}
 
-	if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-		return { allowed: false, host: parsedUrl.hostname, reason: `Blocked scheme: ${parsedUrl.protocol}` };
-	}
+	const schemeViolation = checkUrlScheme(parsedUrl);
+	if (schemeViolation) return schemeViolation;
 
 	const host = normalizeHost(parsedUrl.hostname);
 	if (!host) return { allowed: false, reason: "Empty host" };
@@ -142,25 +145,53 @@ export function checkUrl(rawUrl: string, opts: AllowlistOptions): DomainCheck {
 		return { allowed: false, host, reason: `Invalid host (leading dot): ${host}` };
 	}
 
-	// IP-literal hosts: never match domain entries.
-	// A user-confirmed grant is the strongest signal and wins for IP hosts too.
-	if (isIpLiteral(host)) {
-		if (opts.grantedHosts?.has(host)) return { allowed: true, host, reason: "granted by user" };
-		const explicit = opts.allowedDomains.some((entry) => normalizeHost(entry) === host);
-		if (!explicit) {
-			return { allowed: false, host, reason: `IP-literal host ${host} is not explicitly allowed` };
-		}
-		if (isPrivateIp(host) && (opts.blockPrivateNetworks ?? true)) {
-			return { allowed: false, host, reason: `Private/reserved address ${host} is blocked (blockPrivateNetworks)` };
-		}
-		return { allowed: true, host };
+	if (isIpLiteral(host)) return checkIpLiteralHost(host, allowlistOptions);
+	return checkDomainHost(host, allowlistOptions);
+}
+
+/**
+ * Only http:/https: URLs are ever considered; every other protocol
+ * (file://, ftp://, data:, …) is blocked.
+ *
+ * @returns the block result for a non-http(s) scheme, or `null` when the
+ *   scheme is acceptable and host matching should proceed.
+ */
+function checkUrlScheme(parsedUrl: URL): DomainCheck | null {
+	if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+		return { allowed: false, host: parsedUrl.hostname, reason: `Blocked scheme: ${parsedUrl.protocol}` };
 	}
+	return null;
+}
 
-	// Runtime grants (user-confirmed) win.
-	if (opts.grantedHosts?.has(host)) return { allowed: true, host, reason: "granted by user" };
+/**
+ * IP-literal host regime: IP hosts never match domain entries.
+ * A user-confirmed grant is the strongest signal and wins for IP hosts too;
+ * otherwise an explicit IP entry is required, and private/reserved addresses
+ * stay blocked unless blockPrivateNetworks is turned off.
+ */
+function checkIpLiteralHost(host: string, allowlistOptions: AllowlistOptions): DomainCheck {
+	if (allowlistOptions.grantedHosts?.has(host)) return { allowed: true, host, reason: "granted by user" };
+	const explicitlyAllowed = allowlistOptions.allowedDomains.some((entry) => normalizeHost(entry) === host);
+	if (!explicitlyAllowed) {
+		return { allowed: false, host, reason: `IP-literal host ${host} is not explicitly allowed` };
+	}
+	if (isPrivateIp(host) && (allowlistOptions.blockPrivateNetworks ?? true)) {
+		return { allowed: false, host, reason: `Private/reserved address ${host} is blocked (blockPrivateNetworks)` };
+	}
+	return { allowed: true, host };
+}
 
-	const subdomainsAllowed = opts.allowSubdomains ?? true;
-	for (const entry of opts.allowedDomains) {
+/**
+ * Domain host regime: runtime grants (user-confirmed) win, then the
+ * allowlist entries — exact match first, then a subdomain match when
+ * allowSubdomains is set. IP-literal entries are skipped: they can only
+ * match IP-literal hosts.
+ */
+function checkDomainHost(host: string, allowlistOptions: AllowlistOptions): DomainCheck {
+	if (allowlistOptions.grantedHosts?.has(host)) return { allowed: true, host, reason: "granted by user" };
+
+	const subdomainsAllowed = allowlistOptions.allowSubdomains ?? true;
+	for (const entry of allowlistOptions.allowedDomains) {
 		const normalizedEntry = normalizeHost(entry);
 		if (!normalizedEntry) continue;
 		if (isIpLiteral(normalizedEntry)) continue; // domain entries only, here
