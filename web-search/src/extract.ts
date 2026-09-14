@@ -6,7 +6,7 @@
  * Fetched content is untrusted — this module only shapes it, never executes it.
  */
 
-import { parse, type HTMLElement, type Node } from "node-html-parser";
+import { parse, HTMLElement, type Node } from "node-html-parser";
 import { sanitizeForTui } from "./sanitize.ts";
 
 const DROP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "IFRAME", "OBJECT", "EMBED", "TEMPLATE", "HEAD", "NAV", "FOOTER", "ASIDE"]);
@@ -29,7 +29,7 @@ function collectText(el: Node, out: string[]): void {
 			// Collapse ALL whitespace inside a text node: real line breaks come
 			// from block boundaries, so embedded newlines are just soft wrapping.
 			out.push(child.text.replace(/\s+/g, " "));
-		} else if (child.nodeType === 1) {
+		} else if (child instanceof HTMLElement) {
 			const block = BLOCK_TAGS.has(child.tagName);
 			if (block) out.push("\n");
 			collectText(child, out);

@@ -53,6 +53,7 @@ const logEntries = [];
 const notifications = [];
 const confirms = [];
 let confirmAnswer = true;
+let lastCustomComponent = null;
 const pi = {
 	on: () => {},
 	registerTool: (def) => {
@@ -82,8 +83,9 @@ const ctx = {
 			return confirmAnswer;
 		},
 		custom: async (factory) => {
-			factory(null, { fg: (c, t) => t }, null, () => {});
-			return null;
+			const component = factory(null, { fg: (c, t) => t }, null, () => {});
+			lastCustomComponent = component;
+			return component;
 		},
 	},
 };
@@ -290,6 +292,42 @@ await test("/web-search-domains add/remove updates the settings file", async () 
 await test("/web-search-domains with no args shows the list without throwing", async () => {
 	await commands["web-search-domains"].handler("", ctx); // TUI path uses ui.custom
 	await commands["web-search-status"].handler("", ctx);
+});
+
+await test("TUI /web-search-domains dialog implements handleInput and dismisses on escape/enter/ctrl+c", async () => {
+	// Regression: the dialog used to assign a non-existent `onKey` property,
+	// which pi-tui never calls — the dialog could not be dismissed at all.
+	// pi-tui dispatches keys via handleInput(data) on the focused component.
+	let doneValue = undefined;
+	let doneCalled = false;
+	const originalCustom = ctx.ui.custom;
+	ctx.ui.custom = async (factory) => {
+		const component = factory(null, { fg: (c, t) => t }, null, (value) => {
+			doneCalled = true;
+			doneValue = value;
+		});
+		lastCustomComponent = component;
+		return component;
+	};
+	try {
+		await commands["web-search-domains"].handler("", ctx);
+		assert.ok(lastCustomComponent, "custom dialog component was created");
+		assert.equal(typeof lastCustomComponent.handleInput, "function", "component implements the Component input contract");
+
+		lastCustomComponent.handleInput("\u001b"); // escape
+		assert.ok(doneCalled, "escape dismisses the dialog");
+		assert.equal(doneValue, null);
+
+		doneCalled = false;
+		lastCustomComponent.handleInput("\r"); // enter
+		assert.ok(doneCalled, "enter dismisses the dialog");
+
+		doneCalled = false;
+		lastCustomComponent.handleInput("\u0003"); // ctrl+c
+		assert.ok(doneCalled, "ctrl+c dismisses the dialog");
+	} finally {
+		ctx.ui.custom = originalCustom;
+	}
 });
 
 await test("JS-shell / login-wall page is flagged as low-content; normal page is not", async () => {
