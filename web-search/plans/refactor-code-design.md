@@ -1,9 +1,8 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: PAUSED at the phase 2 boundary.** The AGENTS.md adaptation and
-> phases 0–1 are committed and pushed (see git log). Phases 2–7 below are
-> **not approved** — no further refactor work until the user says so. See
-> `plans/refactor-ledger.md` for the full state.
+> **STATUS: Phase 2 committed.** Phases 0–2 are committed and pushed (see git
+> log). Phases 3–7 below are in progress — executing per the Orchestration
+> Convention (see `plans/refactor-ledger.md`).
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
 `code-design` skill (SRP, variable design, function design, purity, control flow,
@@ -183,17 +182,29 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
 - [x] 4. Type the implicit anys: `let raw: SearchResult[]` (index.ts:230),
    `let res: SafeFetchResult` (index.ts:338).
 
-### Phase 2 — Naming pass (zero behavior change)
+### Phase 2 — Naming pass (zero behavior change) [DONE 2026-09-14]
 
-- [ ] 5. render.ts: delete `const s = sanitizeForTui`; call `sanitizeForTui` directly.
-- [ ] 6. Rename abbreviated locals across all files: `res`→`response`, `raw`→
-   `searchResults`, `trunc`→`truncation`, `u`→`parsedUrl`, `e`→`entry`,
-   `d`→`details`, `r`→`result`, `c`→`content`, `w`→`webSearchSettings`,
-   `ws`→`webSearchSection`, `m`→`mappedMatch`, `cc`→`codePoint`,
-   `v6`→`ipv6Address`, `next`→`nextUrl`, `loaded`→`loadedConfig`.
-- [ ] 7. Rename functions: `noteSession`→`recordSessionCall`,
+- [x] 5. render.ts: delete `const s = sanitizeForTui`; call `sanitizeForTui` directly.
+- [x] 6. Rename abbreviated locals across all files (per-file subagents, 16 files):
+   `res`→`response`, `raw`→`searchResults`/`fileContents`, `trunc`→`truncation`,
+   `u`→`parsedUrl`, `e`→`entry`/`error`/`normalizedEntry`, `d`→`domain`/`details`,
+   `r`→`result`/`searchResult`/`redirect`, `c`→`content`/`chunk`/`charCode`,
+   `w`→`webSearchSettings`, `ws`→`webSearchSection`, `m`→`mappedMatch`/`challengeMarker`,
+   `cc`→`charCode` (**deviation** from `codePoint` — `charCodeAt` yields UTF-16 code
+   units, not code points; more accurate), `v6`→`ipv6Address`, `next`→`nextUrl`/
+   `nextCharCode`/`extended`, `loaded`→`loadedConfig`, plus other abbreviated locals
+   found per file (`i`/`j`/`n`→`charIndex`/`sequenceIndex`/`inputLength`, `h`→
+   `normalizedHost`, `el`→`element`, `out`→`textFragments`, `opts`→`options`/…,
+   `err`→`error`, `msg`→`errorMessage`, `t`→`responseBody`/`token`, `p`→`provider`,
+   `a`/`b`→`firstOctet`/`secondOctet`, `hi`/`lo`→`highWord`/`lowWord`, `n`→`octet`,
+   `urlEl`→`resultHref`, `DDG_FIXTURE`→`DUCKDUCKGO_HTML_FIXTURE`, `serverA`/`serverB`
+   →`allowedServer`/`disallowedServer`, `extModule`→`extensionModule`, `pi`→
+   `mockExtensionApi`, `ctx`→`mockContext`, …). `src/providers/types.ts` needed no
+   changes (`fetchImpl` deferred to item 11).
+- [x] 7. Rename functions: `noteSession`→`recordSessionCall`,
    `allowlistOpts`→`buildAllowlistOptions`, `UNTRUSTED_BANNER_HEAD`→
-   `buildUntrustedBannerHead` (keep the head/full distinction explicit).
+   `buildUntrustedBannerHead` (no full-banner counterpart exists — the full banner
+   is assembled inline at the call site).
 
 ### Phase 3 — Signature cleanup
 
