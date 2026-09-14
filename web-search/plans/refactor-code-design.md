@@ -1,7 +1,7 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: Phase 3 committed.** Phases 0–3 are committed (see git log).
-> Phases 4–7 are in progress — executing per the Orchestration Convention
+> **STATUS: Phase 4 committed.** Phases 0–4 are committed (see git log).
+> Phases 5–7 are in progress — executing per the Orchestration Convention
 > (see `plans/refactor-ledger.md`).
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
@@ -227,21 +227,33 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
    call sites updated; `index.ts` `getProvider` and the e2e zero-arg `search`
    mocks verified unchanged.
 
-### Phase 4 — Session state encapsulation
+### Phase 4 — Session state encapsulation [DONE 2026-09-14]
 
-- [ ] 12. `src/session.ts`: `createSessionState()` factory returning
+- [x] 12. `src/session.ts`: `createSessionState()` factory returning
     `{ grants, callCount, warnedBrave, warnedEmptyAllowlist, lastAllowlist }`;
     the state object is created inside the extension's default export (closure
     scope, not module scope) and passed to the helpers. `resetSessionState()`
-    becomes `session = createSessionState()`.
-- [ ] 13. Split `checkAllowlistDrift` into pure `diffAllowlists(previous, current)`
-    (returns `{added, removed}`) + `reportAllowlistDrift(...)` (notify + log).
-- [ ] 14. `logCall`, `recordSessionCall`, `warnIfAllowlistEmpty` take the session
-    object; `pi`/`ctx` pairs that always travel together stay as-is (they're the
-    API surface, not our state).
-- [ ] 15. Move `setTestProvider`/`providerOverride` to `src/test-seam.ts` (or keep in
-    session.ts with a clear comment); index.ts re-exports `setTestProvider` so
-    the e2e surface is unchanged.
+    becomes `session = createSessionState()` (three event sites rebind the
+    closure variable; every use site reads it at call time — pinned by a new
+    e2e test that fires `session_shutdown` and asserts grants/call-counts
+    clear).
+- [x] 13. Split `checkAllowlistDrift` into pure `diffAllowlists(previous, current)`
+    (returns `{added, removed}`, lives in `src/domains.ts` — the allowlist-domain
+    module) + `reportAllowlistDrift(...)` (notify + log). 7 unit tests added
+    (baseline-null, identical, grow, shrink, both, unsorted-inputs membership,
+    duplicates); the unsorted test de-degenerates to genuinely unsorted inputs
+    compared as sets.
+- [x] 14. `recordSessionCall`, `warnIfAllowlistEmpty` (+ `getProvider`,
+    `buildAllowlistOptions`, `checkAllowlistDrift`, `noteAllowlistChange`)
+    take the session object; `pi`/`ctx` pairs stay as-is. **Deviation:**
+    `logCall` takes no session parameter — it uses no session state (no dead
+    params); `warnIfAllowlistEmpty` is `(config, session, ctx)` — three args,
+    all needed.
+- [x] 15. `setTestProvider`/`providerOverride` moved to `src/test-seam.ts`
+    (documented-seam header: pi extensions are singletons per process, no DI
+    hook in the tool-registration API); index.ts re-exports `setTestProvider`
+    so the e2e surface is unchanged; `getProvider` uses `getTestProvider()`.
+    The test seam is now the only module-level mutable `let` in the package.
 
 ### Phase 5 — Decompose index.ts (the structural fix)
 

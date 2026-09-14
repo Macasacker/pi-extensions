@@ -1,7 +1,9 @@
 # Ledger: web-search code-design refactor
 
-Status: **PHASE 3 COMPLETE — review Verdict: Ready; committing, then phase 4
-(session state encapsulation, items 12–15).** Orchestrator: main session.
+Status: **PHASE 4 COMPLETE — review Verdict: Ready + both Optional findings
+fixed (new reset-rebind e2e test, de-degenerated diff test); committing, then
+phase 5 (index.ts decomposition, items 16–21; ends with a live `pi -p` smoke
+test).** Orchestrator: main session.
 Loop per phase (per AGENTS.md Orchestration Convention): one implementation
 subagent scoped to the phase (follows the `code-design` skill, runs the
 validation gates, no commits) → orchestrator verifies the diff and re-runs the
@@ -157,8 +159,64 @@ no positional `loadConfig` calls remain). Independent adversarial review:
 - Handoff accuracy notes: config.test.mjs had 8 (not 9) `loadConfig` sites;
   the "429" failure mode was never actually tested.
 
+### Phase 4 worklist (items 12–15; per-item waves, serial)
+
+1. [x] **4a — items 12 + 14**: new `src/session.ts` with `SessionState`
+   interface (`{ grants, callCount, warnedBrave, warnedEmptyAllowlist,
+   lastAllowlist }`) + `createSessionState()` factory. Inside the default
+   export: `let session = createSessionState();` (closure scope); the three
+   event-site resets become `session = createSessionState()`. Helpers that
+   read/write session state take the object: `buildAllowlistOptions(config,
+   session)`, `recordSessionCall(session, ctx)`, `warnIfAllowlistEmpty(config,
+   session)`, `getProvider(config, session, ctx?)`, `checkAllowlistDrift(pi,
+   ctx, config, session)`, `noteAllowlistChange(ctx, session)`, status report
+   + `sessionGrants.add` site in web_fetch execute. **Pitfall:** every use
+   site must read the closure `session` variable at call time and pass it in —
+   never capture the object in a long-lived closure, or a reset rebind goes
+   stale. `logCall` takes session only if it uses it (no dead params —
+   report if the plan's list is wrong).
+   — done; `logCall` uses no session state (left param-less, plan list
+   corrected); `warnIfAllowlistEmpty` is `(config, session, ctx)` — 3 args,
+   all needed (notify needs ctx); gates green.
+2. [x] **4b — item 13**: split `checkAllowlistDrift` into pure
+   `diffAllowlists(previous, current)` (returns `{ added, removed }`) +
+   `reportAllowlistDrift(...)` (notify + log). `diffAllowlists` lives in
+   `src/session.ts` or `src/domains.ts` (implementer's judgment); add unit
+   tests for it (add-unit-test skill principles: GWT, failure modes).
+   — done: `diffAllowlists` in `src/domains.ts` (allowlist-domain module,
+   already imported by index.ts); 7 new unit tests in test/domains.test.mjs
+   (baseline null, identical, grow, shrink, both, unsorted inputs,
+   duplicates); suite now 105 tests; gates green.
+3. [x] **4c — item 15**: move `setTestProvider`/`providerOverride` to
+   `src/test-seam.ts` (module-level `let` + `getTestProvider()` accessor,
+   clear "documented test seam" comment); index.ts re-exports
+   `setTestProvider` (e2e surface unchanged) and `getProvider` uses
+   `getTestProvider()`.
+   — done; test-seam.ts is now the only module-level mutable `let` in the
+   package; gates green.
+
+**Phase 4 complete.** Orchestrator re-ran gates (105/105, tsc clean, lint
+clean) and verified the diff (rebind pattern, grants Set identity, drift
+semantics, seam re-export). Independent adversarial review: **Verdict:
+Ready** — no Critical/Important findings; traced all 47 `session` references
+for reset-rebind staleness (holds). Two Optional findings fixed by a focused
+fix subagent before commit:
+- e2e mock now records `session_start`/`session_shutdown` handlers; new test
+  `should clear session grants and call counts when session_shutdown fires`
+  pins the reset-rebind invariant (mutation-verified by the fixer: capturing
+  the object at registration makes exactly this test fail).
+- the "unsorted inputs" `diffAllowlists` test de-degenerated (genuinely
+  unsorted inputs, ≥2 added/removed, compared as sets).
+Suite is now 106 tests; all gates re-run green after the fixes.
+
+After all waves: orchestrator verifies full diff + re-runs gates → independent
+adversarial review over the whole phase-4 diff → fix loop → commit → mark plan
+items 12–15 `[DONE]` → phase 5 (index.ts decomposition, items 16–21; ends
+with a live `pi -p` smoke test).
+
 ## Next action
 
-Commit phase 3 (code + docs), then start phase 4 (session state
-encapsulation, items 12–15): update ledger with the phase-4 worklist and
-dispatch the implementation subagents.
+Commit phase 4 (code + tests + docs), then start phase 5 (index.ts
+decomposition, items 16–21): per-file worklist for `src/tools/search.ts`,
+`src/tools/fetch.ts`, `src/commands/domains.ts`, `src/commands/status.ts`,
+shrunk index.ts; ends with full `npm test` + live `pi -p` smoke test.
