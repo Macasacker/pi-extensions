@@ -228,10 +228,24 @@ Phase 5 is broken into per-module waves (each wave keeps all gates green):
    disabled-case log entry (`kind`/`detail`) with test assertions for both
    tools; (b) add e2e coverage for web_search cancel (aborting signal) and
    provider-error (throwing fake provider) paths.
-2. [ ] **5b — item 17**: `src/tools/fetch.ts` — `executeWebFetch(params, deps)`
-   with named steps `resolveFetchPermission`, `buildFetchOutput`,
-   `detectLowContent`, `saveFullTextToTempFile` (deps also carries
-   `toolCallId` for the temp-file name).
+2. [x] **5b — item 17**: `src/tools/fetch.ts` — `executeWebFetch(params, deps)`
+   (`deps` = `{ toolCallId, config, session, signal, ctx, pi, onUpdate }`);
+   named steps `resolveFetchPermission` (returns `{ check, allowlistOptions }`),
+   `handleFetchFailure` (5th step, keeps execute ≤ ~40 lines),
+   `buildFetchOutput` (returns `{ result, outputChars }`), `detectLowContent`,
+   `saveFullTextToTempFile` (+ pure helpers `isHttpUrl`, `isHtmlContentType`);
+   `buildUntrustedBannerHead` moved here. `web_fetch` execute is now a thin
+   wrapper on `prepareToolExecution` — the 5a transitional inline pre-flight
+   is gone, both tools share it. Carry-overs from 5a review added as tests:
+   disabled-case log entry pinned for both tools; web_search cancel
+   (aborted signal) + provider-error (rejecting fake provider) e2e tests.
+   — done: committed `9a21473`; gates green (108/108, tsc, lint); adversarial
+   review **Verdict: Ready** (byte-identity of all output branches verified
+   literal-by-literal; confirm/grant flow + failure ordering intact). Optional
+   carry-overs folded into 5c: (a) e2e pin for truncation-note variants
+   (small `max_chars` on a long page) and the `[Redirects: …]` note
+   (redirecting e2e endpoint); (b) aborted-signal test should also assert the
+   fake provider was actually invoked (pins post-settle vs pre-call branch).
 3. [ ] **5c — item 18**: `src/commands/domains.ts` — `parseDomainCommandArgs`,
    `applyDomainChange` (shared add/remove validation sequence, once),
    `showDomainList` (+ `DismissableText` moves here); `src/commands/status.ts`
@@ -274,11 +288,11 @@ Phase 5 is broken into per-module waves (each wave keeps all gates green):
 
 ## Next action
 
-Wave 5b: implementation subagent for `src/tools/fetch.ts` (item 17) —
-`executeWebFetch(params, deps)` with `resolveFetchPermission`,
-`buildFetchOutput`, `detectLowContent`, `saveFullTextToTempFile`; adopts
-`prepareToolExecution` (removing the transitional inline pre-flight);
-plus the two 5a review carry-overs (disabled-log-entry assertions, search
-cancel/provider-error e2e coverage). After it reports: orchestrator
-verifies diff + re-runs gates → adversarial review subagent → fix subagent
-if findings → commit → ledger → wave 5c.
+Wave 5c: implementation subagent for `src/commands/domains.ts` +
+`src/commands/status.ts` (item 18) — `parseDomainCommandArgs`,
+`applyDomainChange` (shared add/remove validation sequence, once),
+`showDomainList` (+ `DismissableText` moves here), `buildStatusReport`;
+plus the two 5b review carry-overs (truncation/redirect-note e2e pins,
+provider-invocation assertion in the cancel test). After it reports:
+orchestrator verifies diff + re-runs gates → adversarial review subagent →
+fix subagent if findings → commit → ledger → wave 5d.

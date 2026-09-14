@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 5 executing (resumed 2026-09-14; wave 5a done, `49a97e0`).**
+> **STATUS: IN PROGRESS — phase 5 executing (resumed 2026-09-14; waves 5a `49a97e0`, 5b `9a21473` done).**
 > Phases 0–4 are committed (see git log). Phases 5–7 are approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -264,10 +264,15 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     (`src/tools/common.ts`) so both tools share it; `logCall`/`LogData` moved to
     `src/log.ts`; session-state helpers moved to `src/session.ts`;
     `buildAllowlistOptions` to `src/domains.ts` (wave 5a, committed `49a97e0`).
-- [ ] 17. `src/tools/fetch.ts`: `executeWebFetch(params, deps)` with named steps
+- [x] 17. `src/tools/fetch.ts`: `executeWebFetch(params, deps)` with named steps
     `resolveFetchPermission` (allowlist check + confirm + grant bookkeeping),
     `buildFetchOutput` (banner + truncation + temp file + redirect + low-content
     notes), `detectLowContent(response, extracted)`, `saveFullTextToTempFile`.
+    **Deviation (additions):** a 5th step `handleFetchFailure` (the safeFetch
+    catch block) keeps `executeWebFetch` ≤ ~40 lines; pure helpers
+    `isHttpUrl` / `isHtmlContentType`; `buildFetchOutput` returns
+    `{ result, outputChars }` so the success log detail stays byte-identical;
+    `buildUntrustedBannerHead` moved here. Wave 5b, committed `9a21473`.
 - [ ] 18. `src/commands/domains.ts`: `parseDomainCommandArgs(tokens)`,
     `applyDomainChange(ctx, { action, domain, projectScope })` (the shared
     validation sequence, once), `showDomainList(loadedConfig)`;
