@@ -1,8 +1,8 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: Phase 2 committed.** Phases 0–2 are committed and pushed (see git
-> log). Phases 3–7 below are in progress — executing per the Orchestration
-> Convention (see `plans/refactor-ledger.md`).
+> **STATUS: Phase 3 committed.** Phases 0–3 are committed (see git log).
+> Phases 4–7 are in progress — executing per the Orchestration Convention
+> (see `plans/refactor-ledger.md`).
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
 `code-design` skill (SRP, variable design, function design, purity, control flow,
@@ -206,21 +206,26 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
    `buildUntrustedBannerHead` (no full-banner counterpart exists — the full banner
    is assembled inline at the call site).
 
-### Phase 3 — Signature cleanup
+### Phase 3 — Signature cleanup [DONE 2026-09-14]
 
-- [ ] 8. Split `guardEnabled` into `assertEnabled(config)` (throws, logs) and
-   `warnIfAllowlistEmpty(config, ctx)` (one-time notify) — two single-purpose
-   functions instead of a 5-argument hybrid.
-- [ ] 9. `loadConfig({ cwd, projectTrusted, homeDir })` — options object; `homeDir`
-   defaults to `os.homedir()`, tests pass it explicitly.
-- [ ] 10. Replace the six `clampInt` calls with a declarative spec:
-    `const NUMERIC_LIMITS = { maxResults: {min:1, max:20}, … }` iterated in the
-    merge — one loop, one source of truth for the bounds.
-- [ ] 11. Provider interface: `search(query, limit, signal)`; `fetchImpl` moves to
-    the factories (`createDuckDuckGoProvider({ fetchImpl })`,
-    `createBraveProvider(apiKey, { fetchImpl })`). `duckduckgoProvider` becomes
-    `createDuckDuckGoProvider()`'s default instance. Update
-    `test/providers.test.mjs` call sites.
+- [x] 8. Split `guardEnabled` into `assertEnabled(config)` (throws) and
+   `warnIfAllowlistEmpty(config, ctx)` (one-time notify); call sites log the
+   disabled entry and re-throw the same Error instance (byte-identical log
+   entry and throw message; ordering preserved).
+- [x] 9. `loadConfig({ cwd, projectTrusted, homeDir })` — options object; `homeDir`
+   defaults to `os.homedir()` (destructured default). Call sites: index.ts ×5
+   (the audit's "2" undercounted — `noteAllowlistChange` and both command
+   handlers also call it), test/config.test.mjs ×8 (explicit homeDir kept).
+- [x] 10. `NUMERIC_LIMITS` declarative spec (`as const` + `NumericConfigKey`,
+   module scope after `BUILTIN_DEFAULTS`) iterated in one loop in the merge;
+   `clampInt` kept as the loop helper. **Deviation:** the audit's "six calls"
+   was a miscount — 5 per-key lines, all in the merge.
+- [x] 11. Provider interface: `search(query, limit, signal)`; `fetchImpl` moves to
+   the factories (`createDuckDuckGoProvider({ fetchImpl })`,
+   `createBraveProvider(apiKey, { fetchImpl })`). `duckduckgoProvider` is
+   `createDuckDuckGoProvider()`'s default instance. `test/providers.test.mjs`
+   call sites updated; `index.ts` `getProvider` and the e2e zero-arg `search`
+   mocks verified unchanged.
 
 ### Phase 4 — Session state encapsulation
 

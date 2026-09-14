@@ -1,7 +1,7 @@
 # Ledger: web-search code-design refactor
 
-Status: **PHASE 2 COMPLETE — committed; phase 3 (signature cleanup) next.**
-Phases 0–2 committed and pushed. Orchestrator: main session.
+Status: **PHASE 3 COMPLETE — review Verdict: Ready; committing, then phase 4
+(session state encapsulation, items 12–15).** Orchestrator: main session.
 Loop per phase (per AGENTS.md Orchestration Convention): one implementation
 subagent scoped to the phase (follows the `code-design` skill, runs the
 validation gates, no commits) → orchestrator verifies the diff and re-runs the
@@ -117,9 +117,48 @@ User accepted the Phase 0–1 work (committed as separate logical commits and
 pushed to master) and **approved phases 2–7**. Executing per the Orchestration
 Convention above.
 
+### Phase 3 worklist (items 8–11; per-item waves, serial)
+
+1. [x] **3a — item 8**: split `guardEnabled` (index.ts:172) into
+   `assertEnabled(config)` (throws) + `warnIfAllowlistEmpty(config, ctx)`
+   (one-time notify). Behavior must stay byte-identical: throw message
+   `"web-search is disabled (webSearch.enabled: false). Re-enable it in settings
+   to use web_search/web_fetch."`, log entry
+   `{ kind, target, ok: false, detail: "disabled (webSearch.enabled: false)" }`.
+   Recommended call-site shape: `try { assertEnabled(config); } catch (error) {
+   logCall(pi, ctx, { kind, target, ok: false, detail: "disabled (webSearch.
+   enabled: false)" }); throw error; } warnIfAllowlistEmpty(config, ctx);`
+   (implementer may choose an equivalent clean shape; both functions ≤2 args).
+   — done: recommended shape used verbatim at both call sites; gates green.
+2. [x] **3b — item 9**: `loadConfig({ cwd, projectTrusted, homeDir })` options
+   object; `homeDir` defaults to `os.homedir()`. Call sites: index.ts (5, not 2 —
+   noteAllowlistChange + both command handlers also call it),
+   test/config.test.mjs (9, explicit homeDir kept). — done; gates green.
+3. [x] **3c — item 10**: `NUMERIC_LIMITS` declarative spec iterated in the merge
+   (one loop, one source of truth); replace the per-key `clampInt` calls
+   (5 in the merge — the plan's "6" audit count was off; verify and report).
+   — done: `NUMERIC_LIMITS` at module scope after BUILTIN_DEFAULTS
+   (`as const` + `NumericConfigKey`), single loop in the merge, `clampInt`
+   kept as the loop helper; confirmed 5 call sites (plan's "6×" was a
+   miscount); gates green.
+4. [x] **3d — item 11**: `SearchProvider.search(query, limit, signal)`; `fetchImpl`
+   moves to factories `createDuckDuckGoProvider({ fetchImpl })` /
+   `createBraveProvider(apiKey, { fetchImpl })`; `duckduckgoProvider` is
+   `createDuckDuckGoProvider()`'s default instance. test/providers.test.mjs
+   call sites updated; index.ts `getProvider` + e2e zero-arg `search` mocks
+   verified unchanged. — done; gates green.
+
+**Phase 3 complete.** Orchestrator re-ran gates (98/98, tsc clean, lint
+clean) and verified the diff (factory bodies unchanged, 1:1 test swaps,
+no positional `loadConfig` calls remain). Independent adversarial review:
+**Verdict: Ready** — no Critical/Important findings. Carry-overs:
+- [Optional, pre-existing] no test for Brave's 429 rate-limit branch
+  (brave.ts:52-54) — add in phase 6 (item 24 touches the providers).
+- Handoff accuracy notes: config.test.mjs had 8 (not 9) `loadConfig` sites;
+  the "429" failure mode was never actually tested.
+
 ## Next action
 
-Phase 3 (signature cleanup, items 8–11): update ledger with the phase-3
-worklist, then dispatch implementation subagents (per-file or per-item as
-sized), verify + adversarial review + fix loop, commit, mark plan items
-8–11 `[DONE]`, then phase 4 (session state encapsulation, items 12–15).
+Commit phase 3 (code + docs), then start phase 4 (session state
+encapsulation, items 12–15): update ledger with the phase-4 worklist and
+dispatch the implementation subagents.
