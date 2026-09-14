@@ -298,6 +298,51 @@ await test("web_search reports when nothing is allowed", async () => {
 	setTestProvider(undefined);
 });
 
+await test("should report Cancelled and log a cancelled entry when the signal aborts before the provider search settles", async () => {
+	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
+	setTestProvider({
+		id: "fake",
+		search: async () => [{ title: "Allowed Doc", url: `http://127.0.0.1:${port}/doc`, snippet: "allowed snippet" }],
+	});
+
+	const abortController = new AbortController();
+	abortController.abort(); // the user pressed Esc before the provider settled
+	const searchResult = await tools.web_search.execute("tc30", { query: "test query" }, abortController.signal, undefined, mockContext);
+	setTestProvider(undefined);
+
+	assert.equal(searchResult.content[0].text, "Cancelled");
+	const logEntry = logEntries.at(-1);
+	assert.equal(logEntry.type, "web-search-log");
+	assert.equal(logEntry.data.kind, "search");
+	assert.equal(logEntry.data.target, "test query");
+	assert.equal(logEntry.data.ok, false);
+	assert.equal(logEntry.data.detail, "cancelled");
+});
+
+await test("should log the provider error and rethrow when the search provider rejects", async () => {
+	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
+	const providerFailureMessage = "provider exploded";
+	setTestProvider({
+		id: "fake",
+		search: async () => {
+			throw new Error(providerFailureMessage);
+		},
+	});
+
+	await assert.rejects(
+		() => tools.web_search.execute("tc31", { query: "test query" }, signal, undefined, mockContext),
+		(error) => error instanceof Error && error.message === providerFailureMessage,
+	);
+	setTestProvider(undefined);
+
+	const logEntry = logEntries.at(-1);
+	assert.equal(logEntry.type, "web-search-log");
+	assert.equal(logEntry.data.kind, "search");
+	assert.equal(logEntry.data.target, "test query");
+	assert.equal(logEntry.data.ok, false);
+	assert.equal(logEntry.data.detail, providerFailureMessage);
+});
+
 await test("/web-search-domains add/remove updates the settings file", async () => {
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
 	const file = path.join(home, ".pi", "agent", "settings.json");
@@ -412,10 +457,26 @@ await test("allowlist change via /web-search-domains (user-initiated) does NOT t
 	);
 });
 
-await test("disabled config blocks both tools", async () => {
+await test("disabled config blocks both tools and logs the disabled entry for each", async () => {
 	writeGlobalConfig({ webSearch: { enabled: false, useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
-	await assert.rejects(() => tools.web_fetch.execute("tc8", { url: `http://127.0.0.1:${port}/` }, signal, undefined, mockContext), /disabled/i);
-	await assert.rejects(() => tools.web_search.execute("tc9", { query: "q" }, signal, undefined, mockContext), /disabled/i);
+
+	const fetchTarget = `http://127.0.0.1:${port}/`;
+	await assert.rejects(() => tools.web_fetch.execute("tc8", { url: fetchTarget }, signal, undefined, mockContext), /disabled/i);
+	const fetchLogEntry = logEntries.at(-1);
+	assert.equal(fetchLogEntry.type, "web-search-log");
+	assert.equal(fetchLogEntry.data.kind, "fetch");
+	assert.equal(fetchLogEntry.data.target, fetchTarget);
+	assert.equal(fetchLogEntry.data.ok, false);
+	assert.equal(fetchLogEntry.data.detail, "disabled (webSearch.enabled: false)");
+
+	const searchTarget = "q";
+	await assert.rejects(() => tools.web_search.execute("tc9", { query: searchTarget }, signal, undefined, mockContext), /disabled/i);
+	const searchLogEntry = logEntries.at(-1);
+	assert.equal(searchLogEntry.type, "web-search-log");
+	assert.equal(searchLogEntry.data.kind, "search");
+	assert.equal(searchLogEntry.data.target, searchTarget);
+	assert.equal(searchLogEntry.data.ok, false);
+	assert.equal(searchLogEntry.data.detail, "disabled (webSearch.enabled: false)");
 });
 
 server.close();
