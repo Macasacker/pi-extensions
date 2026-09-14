@@ -315,8 +315,22 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
    byte-identical; bypass matrix re-verified (userinfo, IDN, IPv4-mapped
    IPv6, zone IDs, decimal IPs, IP grants, `allowSubdomains: false`
    boundaries). No carry-overs.
-2. [ ] **6b — item 23**: `safeFetch` loop body → `fetchOneHop(url, signal)` +
-   `resolveRedirectTarget(response, currentUrl)` (fetch.ts).
+2. [x] **6b — item 23**: `safeFetch` loop body → `fetchOneHop(url, deps)`
+   (`deps` = `{ doFetch, callerSignal, timeoutMs }` — the plan's shorthand
+   `fetchOneHop(url, signal)` became a deps bag per the code-design ≤2-args
+   rule; `callerSignal` carries the plan's `signal`) +
+   `resolveRedirectTarget(response, currentUrl)` (fetch.ts). Both
+   module-private. Loop keeps: per-hop `checkUrl` re-validation (first
+   statement), `hop > maxRedirects` before the fetch, `redirects`/`current`/
+   `hop` state, the ≥400 branch, and the `readBodyCapped` + result
+   construction. Per-hop `combinedSignal` semantics preserved (fresh
+   `AbortSignal.timeout` each hop). Declared deviation: a two-line "why"
+   comment added on the redirect body-cancel swallow (comment-only; the
+   ≥400 branch's identical cancel left for phase 7 item 30). — done:
+   committed `359e1c1`; gates green (140/140, tsc, lint); adversarial
+   review **Verdict: Ready** — no findings of any severity (path-by-path
+   control-flow comparison vs pre-wave; targeted 12/12 fetch-suite run;
+   export surface frozen).
 3. [ ] **6c — item 24**: providers → shared `fetchProviderResponse(url,
    { signal, headers })` + `parseDuckDuckGoResults` / `parseBraveResults`.
 4. [ ] **6d — item 25**: `loadConfig` merge closure → named
@@ -340,8 +354,12 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Next action
 
-Wave 6b: implementation subagent for `src/fetch.ts` (item 23) — `safeFetch`
-loop body → `fetchOneHop(url, signal)` + `resolveRedirectTarget(response,
-currentUrl)`. After it reports: orchestrator verifies diff + re-runs gates
-→ adversarial review subagent → fix subagent if findings → commit → ledger
-→ wave 6c.
+Wave 6c: implementation subagent for the providers (item 24) — shared
+`fetchProviderResponse(url, { signal, headers })` (fetch + cancel-check +
+status errors) and `parseDuckDuckGoResults` / `parseBraveResults`
+(providers/). The status-code checks stay provider-specific (DDG's single
+`!response.ok` branch vs Brave's 401/403/429 ladder — different frozen
+messages); the shared preamble is fetch + cancel-check + request-failed
+mapping (provider name parameterized for the error message). After it
+reports: orchestrator verifies diff + re-runs gates → adversarial review
+subagent → fix subagent if findings → commit → ledger → wave 6d.

@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 executing (wave 6a `43bcafc` done).**
+> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1` done).**
 > Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -304,8 +304,11 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     module-private (frozen export surface unchanged); `checkUrl`'s 2nd param
     renamed `opts` → `allowlistOptions` (closes the options-bag vocabulary
     carry-over). Wave 6a, committed `43bcafc`.
-- [ ] 23. `safeFetch` loop body → `fetchOneHop(url, signal)` and
+- [x] 23. `safeFetch` loop body → `fetchOneHop(url, signal)` and
     `resolveRedirectTarget(response, currentUrl)` (fetch.ts).
+    **Deviation:** `fetchOneHop(url, deps)` with a deps bag
+    (`{ doFetch, callerSignal, timeoutMs }`) per the code-design ≤2-args
+    rule; both helpers module-private. Wave 6b, committed `359e1c1`.
 - [ ] 24. Providers → shared `fetchProviderResponse(url, { signal, headers })`
     (fetch + cancel-check + status errors) and `parseDuckDuckGoResults` /
     `parseBraveResults` (providers/).
