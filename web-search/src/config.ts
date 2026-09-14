@@ -86,8 +86,8 @@ export function projectSettingsPath(cwd: string): string {
 
 function readSettingsJson(file: string): Record<string, unknown> | null {
 	try {
-		const raw = fs.readFileSync(file, "utf8");
-		const parsed = JSON.parse(raw);
+		const fileContents = fs.readFileSync(file, "utf8");
+		const parsed = JSON.parse(fileContents);
 		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
 		return null;
 	} catch {
@@ -95,26 +95,26 @@ function readSettingsJson(file: string): Record<string, unknown> | null {
 	}
 }
 
-function clampInt(v: unknown, min: number, max: number, fallback: number): number {
-	if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
-	return Math.min(max, Math.max(min, Math.round(v)));
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+	return Math.min(max, Math.max(min, Math.round(value)));
 }
 
-function asBool(v: unknown, fallback: boolean): boolean {
-	return typeof v === "boolean" ? v : fallback;
+function asBool(value: unknown, fallback: boolean): boolean {
+	return typeof value === "boolean" ? value : fallback;
 }
 
-function asString(v: unknown, fallback: string): string {
-	return typeof v === "string" ? v : fallback;
+function asString(value: unknown, fallback: string): string {
+	return typeof value === "string" ? value : fallback;
 }
 
 /** Normalize a user-supplied domain entry; returns "" if unusable. */
 export function sanitizeDomainEntry(entry: unknown): string {
 	if (typeof entry !== "string") return "";
-	const e = entry.trim().toLowerCase();
-	if (!e) return "";
+	const normalizedEntry = entry.trim().toLowerCase();
+	if (!normalizedEntry) return "";
 	// Strip any scheme a user might have pasted.
-	const noScheme = e.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+	const noScheme = normalizedEntry.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
 	let host = noScheme.split("/")[0].split("?")[0].split("#")[0];
 	// Unbracket IPv6 literals so entries and URL hostnames compare consistently.
 	if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
@@ -148,41 +148,41 @@ export function loadConfig(
 
 	const merge = (file: string) => {
 		const settings = readSettingsJson(file);
-		const ws = settings?.webSearch;
-		if (!ws || typeof ws !== "object" || Array.isArray(ws)) return;
-		const w = ws as Record<string, unknown>;
+		const webSearchSection = settings?.webSearch;
+		if (!webSearchSection || typeof webSearchSection !== "object" || Array.isArray(webSearchSection)) return;
+		const webSearchSettings = webSearchSection as Record<string, unknown>;
 
-		config.enabled = asBool(w.enabled, config.enabled);
-		if (w.provider === "duckduckgo" || w.provider === "brave") config.provider = w.provider;
-		config.braveApiKey = asString(w.braveApiKey, config.braveApiKey);
-		config.useBuiltins = asBool(w.useBuiltins, config.useBuiltins);
-		config.allowSubdomains = asBool(w.allowSubdomains, config.allowSubdomains);
-		config.confirmOutsideAllowlist = asBool(w.confirmOutsideAllowlist, config.confirmOutsideAllowlist);
-		config.maxResults = clampInt(w.maxResults, 1, 20, config.maxResults);
-		config.maxContentChars = clampInt(w.maxContentChars, 1000, 100000, config.maxContentChars);
-		config.maxDownloadBytes = clampInt(w.maxDownloadBytes, 1024, 10 * 1024 * 1024, config.maxDownloadBytes);
-		config.timeoutMs = clampInt(w.timeoutMs, 1000, 120000, config.timeoutMs);
-		config.maxRedirects = clampInt(w.maxRedirects, 0, 10, config.maxRedirects);
-		config.blockPrivateNetworks = asBool(w.blockPrivateNetworks, config.blockPrivateNetworks);
+		config.enabled = asBool(webSearchSettings.enabled, config.enabled);
+		if (webSearchSettings.provider === "duckduckgo" || webSearchSettings.provider === "brave") config.provider = webSearchSettings.provider;
+		config.braveApiKey = asString(webSearchSettings.braveApiKey, config.braveApiKey);
+		config.useBuiltins = asBool(webSearchSettings.useBuiltins, config.useBuiltins);
+		config.allowSubdomains = asBool(webSearchSettings.allowSubdomains, config.allowSubdomains);
+		config.confirmOutsideAllowlist = asBool(webSearchSettings.confirmOutsideAllowlist, config.confirmOutsideAllowlist);
+		config.maxResults = clampInt(webSearchSettings.maxResults, 1, 20, config.maxResults);
+		config.maxContentChars = clampInt(webSearchSettings.maxContentChars, 1000, 100000, config.maxContentChars);
+		config.maxDownloadBytes = clampInt(webSearchSettings.maxDownloadBytes, 1024, 10 * 1024 * 1024, config.maxDownloadBytes);
+		config.timeoutMs = clampInt(webSearchSettings.timeoutMs, 1000, 120000, config.timeoutMs);
+		config.maxRedirects = clampInt(webSearchSettings.maxRedirects, 0, 10, config.maxRedirects);
+		config.blockPrivateNetworks = asBool(webSearchSettings.blockPrivateNetworks, config.blockPrivateNetworks);
 
-		if (w.useBuiltins === false) {
+		if (webSearchSettings.useBuiltins === false) {
 			// Drop built-in domains but keep user-provided ones.
-			const builtinSet = new Set(BUILTIN_DEFAULTS.allowedDomains.map((d) => d.toLowerCase()));
-			config.allowedDomains = config.allowedDomains.filter((d) => !builtinSet.has(d.toLowerCase()));
+			const builtinSet = new Set(BUILTIN_DEFAULTS.allowedDomains.map((domain) => domain.toLowerCase()));
+			config.allowedDomains = config.allowedDomains.filter((domain) => !builtinSet.has(domain.toLowerCase()));
 		}
 
-		if (Array.isArray(w.allowedDomains)) {
+		if (Array.isArray(webSearchSettings.allowedDomains)) {
 			const fresh: string[] = [];
-			for (const entry of w.allowedDomains) {
-				const d = sanitizeDomainEntry(entry);
-				if (d) fresh.push(d);
+			for (const entry of webSearchSettings.allowedDomains) {
+				const sanitizedDomain = sanitizeDomainEntry(entry);
+				if (sanitizedDomain) fresh.push(sanitizedDomain);
 			}
 			if (fresh.length > 0) {
-				const seen = new Set(config.allowedDomains.map((d) => d.toLowerCase()));
-				for (const d of fresh) {
-					if (!seen.has(d.toLowerCase())) {
-						seen.add(d.toLowerCase());
-						config.allowedDomains.push(d);
+				const seen = new Set(config.allowedDomains.map((domain) => domain.toLowerCase()));
+				for (const domain of fresh) {
+					if (!seen.has(domain.toLowerCase())) {
+						seen.add(domain.toLowerCase());
+						config.allowedDomains.push(domain);
 					}
 				}
 				domainSources.push({ path: file, domains: fresh });
@@ -207,13 +207,13 @@ export function updateSettingsDomains(
 	mutate: (list: string[]) => string[],
 ): string {
 	const settings = readSettingsJson(file) ?? {};
-	const ws = (settings.webSearch ?? {}) as Record<string, unknown>;
-	const current = Array.isArray(ws.allowedDomains)
-		? (ws.allowedDomains as unknown[]).map(sanitizeDomainEntry).filter(Boolean)
+	const webSearchSection = (settings.webSearch ?? {}) as Record<string, unknown>;
+	const current = Array.isArray(webSearchSection.allowedDomains)
+		? (webSearchSection.allowedDomains as unknown[]).map(sanitizeDomainEntry).filter(Boolean)
 		: [];
-	const next = mutate(current);
-	const nextWs = { ...ws, allowedDomains: next };
-	const nextSettings = { ...settings, webSearch: nextWs };
+	const nextDomains = mutate(current);
+	const nextWebSearchSection = { ...webSearchSection, allowedDomains: nextDomains };
+	const nextSettings = { ...settings, webSearch: nextWebSearchSection };
 	fs.mkdirSync(path.dirname(file), { recursive: true });
 	fs.writeFileSync(file, JSON.stringify(nextSettings, null, 2) + "\n", "utf8");
 	return file;

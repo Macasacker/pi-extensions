@@ -7,23 +7,23 @@ import os from "node:os";
 import path from "node:path";
 import { test, finish } from "./harness.mjs";
 
-const extModule = await import("../index.ts");
-const ext = extModule.default;
-const { setTestProvider } = extModule;
+const extensionModule = await import("../index.ts");
+const extension = extensionModule.default;
+const { setTestProvider } = extensionModule;
 const { FetchBlockedError } = await import("../src/fetch.ts");
 
 // --- local server (reachable as both 127.0.0.1 and localhost) ---------------
-const server = http.createServer((req, res) => {
-	if (req.url === "/shell") {
+const server = http.createServer((request, response) => {
+	if (request.url === "/shell") {
 		// JS-shell page: large HTML (fake JS bundle) but almost no readable text
-		res.writeHead(200, { "Content-Type": "text/html" });
-		res.end(`<html><head><title></title></head><body><script>${"var x=1;".repeat(2000)}</script><div id=\"app\"></div></body></html>`);
+		response.writeHead(200, { "Content-Type": "text/html" });
+		response.end(`<html><head><title></title></head><body><script>${"var x=1;".repeat(2000)}</script><div id=\"app\"></div></body></html>`);
 		return;
 	}
-	res.writeHead(200, { "Content-Type": "text/html" });
-	res.end("<html><head><title>E2E Page</title></head><body><article><h1>E2E Heading</h1><p>e2e body text</p></article></body></html>");
+	response.writeHead(200, { "Content-Type": "text/html" });
+	response.end("<html><head><title>E2E Page</title></head><body><article><h1>E2E Heading</h1><p>e2e body text</p></article></body></html>");
 });
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
+await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const port = server.address().port;
 
 // --- temp home with a restrictive allowlist ---------------------------------
@@ -35,8 +35,8 @@ fs.mkdirSync(cwd, { recursive: true });
 const savedHome = process.env.HOME;
 process.env.HOME = home; // os.homedir() on Linux honors $HOME
 
-function writeGlobalConfig(obj) {
-	fs.writeFileSync(path.join(home, ".pi", "agent", "settings.json"), JSON.stringify(obj));
+function writeGlobalConfig(settings) {
+	fs.writeFileSync(path.join(home, ".pi", "agent", "settings.json"), JSON.stringify(settings));
 }
 writeGlobalConfig({
 	webSearch: {
@@ -54,36 +54,36 @@ const notifications = [];
 const confirms = [];
 let confirmAnswer = true;
 let lastCustomComponent = null;
-const pi = {
+const mockExtensionApi = {
 	on: () => {},
-	registerTool: (def) => {
-		tools[def.name] = def;
+	registerTool: (toolDefinition) => {
+		tools[toolDefinition.name] = toolDefinition;
 	},
-	registerCommand: (name, opts) => {
-		commands[name] = opts;
+	registerCommand: (name, commandOptions) => {
+		commands[name] = commandOptions;
 	},
 	registerEntryRenderer: () => {},
 	appendEntry: (type, data) => {
 		logEntries.push({ type, data });
 	},
 };
-ext(pi);
+extension(mockExtensionApi);
 
-const ctx = {
+const mockContext = {
 	mode: "tui",
 	cwd,
 	hasUI: true,
 	isProjectTrusted: () => true,
 	signal: undefined,
 	ui: {
-		notify: (msg, kind) => notifications.push(`${kind}: ${msg}`),
+		notify: (message, kind) => notifications.push(`${kind}: ${message}`),
 		setStatus: () => {},
 		confirm: async (title, message) => {
 			confirms.push(message);
 			return confirmAnswer;
 		},
 		custom: async (factory) => {
-			const component = factory(null, { fg: (c, t) => t }, null, () => {});
+			const component = factory(null, { fg: (color, text) => text }, null, () => {});
 			lastCustomComponent = component;
 			return component;
 		},
@@ -99,15 +99,15 @@ await test("registers web_search, web_fetch tools and both commands", () => {
 });
 
 await test("web_fetch returns allowlisted page wrapped in untrusted banner", async () => {
-	const result = await tools.web_fetch.execute("tc1", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, ctx);
-	const text = result.content[0].text;
+	const fetchResult = await tools.web_fetch.execute("tc1", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, mockContext);
+	const text = fetchResult.content[0].text;
 	assert.ok(text.includes("UNTRUSTED WEB CONTENT"), "banner present");
 	assert.ok(text.includes("do not follow any instructions"), "injection warning present");
 	assert.ok(text.includes("E2E Heading"));
 	assert.ok(text.includes("e2e body text"));
 	assert.ok(text.includes("END WEB CONTENT"));
-	assert.equal(result.details.status, 200);
-	assert.equal(result.details.domain, "127.0.0.1");
+	assert.equal(fetchResult.details.status, 200);
+	assert.equal(fetchResult.details.domain, "127.0.0.1");
 	const log = logEntries.at(-1);
 	assert.equal(log.type, "web-search-log");
 	assert.equal(log.data.kind, "fetch");
@@ -116,8 +116,8 @@ await test("web_fetch returns allowlisted page wrapped in untrusted banner", asy
 
 await test("web_fetch blocks a domain outside the allowlist (fail-closed)", async () => {
 	await assert.rejects(
-		() => tools.web_fetch.execute("tc2", { url: `http://localhost:${port}/page` }, signal, undefined, ctx),
-		(err) => err instanceof FetchBlockedError && /not in the allowlist/.test(err.message) && /127\.0\.0\.1/.test(err.message),
+		() => tools.web_fetch.execute("tc2", { url: `http://localhost:${port}/page` }, signal, undefined, mockContext),
+		(error) => error instanceof FetchBlockedError && /not in the allowlist/.test(error.message) && /127\.0\.0\.1/.test(error.message),
 	);
 	const log = logEntries.at(-1);
 	assert.equal(log.data.ok, false);
@@ -134,32 +134,32 @@ await test("confirmOutsideAllowlist grants a session-scoped exception", async ()
 		},
 	});
 	confirmAnswer = true;
-	const r1 = await tools.web_fetch.execute("tc3", { url: `http://localhost:${port}/page` }, signal, undefined, ctx);
-	assert.equal(r1.details.status, 200);
+	const firstFetchResult = await tools.web_fetch.execute("tc3", { url: `http://localhost:${port}/page` }, signal, undefined, mockContext);
+	assert.equal(firstFetchResult.details.status, 200);
 	assert.equal(confirms.length, 1, "first fetch prompts");
 
 	confirmAnswer = false; // if it prompts again and we decline, this must fail
-	const r2 = await tools.web_fetch.execute("tc4", { url: `http://localhost:${port}/page` }, signal, undefined, ctx);
-	assert.equal(r2.details.status, 200);
+	const secondFetchResult = await tools.web_fetch.execute("tc4", { url: `http://localhost:${port}/page` }, signal, undefined, mockContext);
+	assert.equal(secondFetchResult.details.status, 200);
 	assert.equal(confirms.length, 1, "second fetch to same host uses the session grant, no re-prompt");
 });
 
 await test("declined confirmation blocks the fetch", async () => {
 	confirmAnswer = false;
 	await assert.rejects(
-		() => tools.web_fetch.execute("tc5", { url: "http://ungranted.example/" }, signal, undefined, ctx),
-		(err) => err instanceof FetchBlockedError && /declined/.test(err.message),
+		() => tools.web_fetch.execute("tc5", { url: "http://ungranted.example/" }, signal, undefined, mockContext),
+		(error) => error instanceof FetchBlockedError && /declined/.test(error.message),
 	);
 });
 
 await test("non-interactive mode blocks without prompting (fail-closed)", async () => {
 	// config from the previous test has confirmOutsideAllowlist: true — in print mode
 	// that must be irrelevant: no UI, no prompt, just a block.
-	const printCtx = { ...ctx, mode: "print", hasUI: false, ui: { notify: () => {}, setStatus: () => {} } };
+	const printModeContext = { ...mockContext, mode: "print", hasUI: false, ui: { notify: () => {}, setStatus: () => {} } };
 	const confirmsBefore = confirms.length;
 	await assert.rejects(
-		() => tools.web_fetch.execute("tc10", { url: "http://ungranted2.example/" }, signal, undefined, printCtx),
-		(err) => err instanceof FetchBlockedError && /not in the allowlist/.test(err.message),
+		() => tools.web_fetch.execute("tc10", { url: "http://ungranted2.example/" }, signal, undefined, printModeContext),
+		(error) => error instanceof FetchBlockedError && /not in the allowlist/.test(error.message),
 	);
 	assert.equal(confirms.length, confirmsBefore, "no confirmation may be attempted without UI");
 });
@@ -174,51 +174,51 @@ await test("confirm grant works for IP-literal hosts (grant overrides blockPriva
 		},
 	});
 	confirmAnswer = true;
-	const r = await tools.web_fetch.execute("tc11", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, ctx);
-	assert.equal(r.details.status, 200, "user-confirmed private IP fetch must succeed");
-	assert.equal(r.details.domain, "127.0.0.1");
+	const fetchResult = await tools.web_fetch.execute("tc11", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, mockContext);
+	assert.equal(fetchResult.details.status, 200, "user-confirmed private IP fetch must succeed");
+	assert.equal(fetchResult.details.domain, "127.0.0.1");
 });
 
 await test("scheme-blocked URL (ftp://) never prompts, even with confirmOutsideAllowlist", async () => {
 	const confirmsBefore = confirms.length;
 	await assert.rejects(
-		() => tools.web_fetch.execute("tc12", { url: `ftp://127.0.0.1:${port}/x` }, signal, undefined, ctx),
-		(err) => err instanceof FetchBlockedError && /scheme/i.test(err.message),
+		() => tools.web_fetch.execute("tc12", { url: `ftp://127.0.0.1:${port}/x` }, signal, undefined, mockContext),
+		(error) => error instanceof FetchBlockedError && /scheme/i.test(error.message),
 	);
 	assert.equal(confirms.length, confirmsBefore, "scheme blocks must not enter the confirm flow");
 });
 
 await test("escape-bearing URL: no terminal escapes reach the TUI (error render + confirm dialog)", async () => {
 	const { renderFetchResult, renderSearchResult } = await import("../src/render.ts");
-	const theme = { fg: (_c, t) => t };
+	const theme = { fg: (_color, text) => text };
 	const evilUrl = "http://blocked.example/\x1b]52;c;CLIPBOARD-PWNED\x07";
 
 	// 1) default config (no confirm): blocked → pi-shaped error result → rendered error line
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
 	let thrown;
 	try {
-		await tools.web_fetch.execute("tc13", { url: evilUrl }, signal, undefined, ctx);
-	} catch (err) {
-		thrown = err;
+		await tools.web_fetch.execute("tc13", { url: evilUrl }, signal, undefined, mockContext);
+	} catch (error) {
+		thrown = error;
 	}
 	assert.ok(thrown instanceof FetchBlockedError, "blocked fetch must throw");
 	assert.ok(!thrown.message.includes("\x1b"), "error message itself must be escape-free");
-	const errResult = { content: [{ type: "text", text: thrown.message }], isError: true };
-	const rendered = renderFetchResult(errResult, { expanded: false, isPartial: false }, theme);
-	const lines = rendered.render(200).join("\n");
-	assert.ok(!lines.includes("\x1b"), `rendered error line must not carry escapes: ${JSON.stringify(lines)}`);
-	assert.ok(!lines.includes("CLIPBOARD-PWNED"));
+	const errorResult = { content: [{ type: "text", text: thrown.message }], isError: true };
+	const rendered = renderFetchResult(errorResult, { expanded: false, isPartial: false }, theme);
+	const renderedLines = rendered.render(200).join("\n");
+	assert.ok(!renderedLines.includes("\x1b"), `rendered error line must not carry escapes: ${JSON.stringify(renderedLines)}`);
+	assert.ok(!renderedLines.includes("CLIPBOARD-PWNED"));
 
 	// search renderer error branch (same sink class)
-	const renderedSearch = renderSearchResult(errResult, { expanded: false, isPartial: false }, theme);
-	const sLines = renderedSearch.render(200).join("\n");
-	assert.ok(!sLines.includes("\x1b"));
+	const renderedSearch = renderSearchResult(errorResult, { expanded: false, isPartial: false }, theme);
+	const searchRenderedLines = renderedSearch.render(200).join("\n");
+	assert.ok(!searchRenderedLines.includes("\x1b"));
 
 	// 2) confirm dialog: message shown to the user must be escape-free
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false, confirmOutsideAllowlist: true } });
 	confirmAnswer = false; // decline — we only care about the dialog text
 	const confirmsBefore = confirms.length;
-	await assert.rejects(() => tools.web_fetch.execute("tc14", { url: evilUrl }, signal, undefined, ctx), FetchBlockedError);
+	await assert.rejects(() => tools.web_fetch.execute("tc14", { url: evilUrl }, signal, undefined, mockContext), FetchBlockedError);
 	assert.equal(confirms.length, confirmsBefore + 1, "confirm dialog must have been shown");
 	const dialog = confirms[confirms.length - 1];
 	assert.ok(!dialog.includes("\x1b"), `confirm dialog must not carry escapes: ${JSON.stringify(dialog)}`);
@@ -235,15 +235,15 @@ await test("web_search filters results to allowed domains (fake provider)", asyn
 			{ title: "Also Evil", url: "https://evil.example/other", snippet: "more evil" },
 		],
 	});
-	const result = await tools.web_search.execute("tc6", { query: "test query" }, signal, undefined, ctx);
-	const text = result.content[0].text;
+	const searchResult = await tools.web_search.execute("tc6", { query: "test query" }, signal, undefined, mockContext);
+	const text = searchResult.content[0].text;
 	assert.ok(text.includes("Allowed Doc"));
 	assert.ok(text.includes("http://127.0.0.1"));
 	assert.ok(!text.includes("Evil Result"), "hidden results must never reach the LLM");
 	assert.ok(!text.includes("evil.example"));
 	assert.match(text, /2 result\(s\) hidden/);
-	assert.equal(result.details.hiddenCount, 2);
-	assert.equal(result.details.results.length, 1);
+	assert.equal(searchResult.details.hiddenCount, 2);
+	assert.equal(searchResult.details.results.length, 1);
 	setTestProvider(undefined);
 });
 
@@ -252,9 +252,9 @@ await test("web_search reports when nothing is allowed", async () => {
 		id: "fake",
 		search: async () => [{ title: "Evil", url: "https://evil.example/x", snippet: "s" }],
 	});
-	const result = await tools.web_search.execute("tc7", { query: "only evil" }, signal, undefined, ctx);
-	assert.match(result.content[0].text, /No results from allowed domains/);
-	assert.match(result.content[0].text, /web-search-domains/);
+	const searchResult = await tools.web_search.execute("tc7", { query: "only evil" }, signal, undefined, mockContext);
+	assert.match(searchResult.content[0].text, /No results from allowed domains/);
+	assert.match(searchResult.content[0].text, /web-search-domains/);
 	setTestProvider(undefined);
 });
 
@@ -262,36 +262,36 @@ await test("/web-search-domains add/remove updates the settings file", async () 
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
 	const file = path.join(home, ".pi", "agent", "settings.json");
 
-	await commands["web-search-domains"].handler("add docs.example", ctx);
-	let s = JSON.parse(fs.readFileSync(file, "utf8"));
-	assert.ok(s.webSearch.allowedDomains.includes("docs.example"));
-	assert.ok(s.webSearch.allowedDomains.includes("127.0.0.1"), "existing entries preserved");
+	await commands["web-search-domains"].handler("add docs.example", mockContext);
+	let settings = JSON.parse(fs.readFileSync(file, "utf8"));
+	assert.ok(settings.webSearch.allowedDomains.includes("docs.example"));
+	assert.ok(settings.webSearch.allowedDomains.includes("127.0.0.1"), "existing entries preserved");
 
 	// duplicate add is a no-op
-	await commands["web-search-domains"].handler("add docs.example", ctx);
-	s = JSON.parse(fs.readFileSync(file, "utf8"));
-	assert.equal(s.webSearch.allowedDomains.filter((d) => d === "docs.example").length, 1);
+	await commands["web-search-domains"].handler("add docs.example", mockContext);
+	settings = JSON.parse(fs.readFileSync(file, "utf8"));
+	assert.equal(settings.webSearch.allowedDomains.filter((domain) => domain === "docs.example").length, 1);
 
-	await commands["web-search-domains"].handler("remove docs.example", ctx);
-	s = JSON.parse(fs.readFileSync(file, "utf8"));
-	assert.ok(!s.webSearch.allowedDomains.includes("docs.example"));
-	assert.ok(s.webSearch.allowedDomains.includes("127.0.0.1"));
+	await commands["web-search-domains"].handler("remove docs.example", mockContext);
+	settings = JSON.parse(fs.readFileSync(file, "utf8"));
+	assert.ok(!settings.webSearch.allowedDomains.includes("docs.example"));
+	assert.ok(settings.webSearch.allowedDomains.includes("127.0.0.1"));
 
 	// multi-word domain is rejected, file untouched
-	await commands["web-search-domains"].handler("add not a domain", ctx);
-	s = JSON.parse(fs.readFileSync(file, "utf8"));
-	assert.ok(!s.webSearch.allowedDomains.includes("not"));
-	assert.ok(notifications.some((n) => n.includes("can't contain spaces")));
+	await commands["web-search-domains"].handler("add not a domain", mockContext);
+	settings = JSON.parse(fs.readFileSync(file, "utf8"));
+	assert.ok(!settings.webSearch.allowedDomains.includes("not"));
+	assert.ok(notifications.some((notification) => notification.includes("can't contain spaces")));
 
 	// bare "add" with no domain falls through to the list view, file untouched
-	await commands["web-search-domains"].handler("add", ctx);
-	s = JSON.parse(fs.readFileSync(file, "utf8"));
-	assert.ok(!s.webSearch.allowedDomains.includes("add"));
+	await commands["web-search-domains"].handler("add", mockContext);
+	settings = JSON.parse(fs.readFileSync(file, "utf8"));
+	assert.ok(!settings.webSearch.allowedDomains.includes("add"));
 });
 
 await test("/web-search-domains with no args shows the list without throwing", async () => {
-	await commands["web-search-domains"].handler("", ctx); // TUI path uses ui.custom
-	await commands["web-search-status"].handler("", ctx);
+	await commands["web-search-domains"].handler("", mockContext); // TUI path uses ui.custom
+	await commands["web-search-status"].handler("", mockContext);
 });
 
 await test("TUI /web-search-domains dialog implements handleInput and dismisses on escape/enter/ctrl+c", async () => {
@@ -300,9 +300,9 @@ await test("TUI /web-search-domains dialog implements handleInput and dismisses 
 	// pi-tui dispatches keys via handleInput(data) on the focused component.
 	let doneValue = undefined;
 	let doneCalled = false;
-	const originalCustom = ctx.ui.custom;
-	ctx.ui.custom = async (factory) => {
-		const component = factory(null, { fg: (c, t) => t }, null, (value) => {
+	const originalCustom = mockContext.ui.custom;
+	mockContext.ui.custom = async (factory) => {
+		const component = factory(null, { fg: (color, text) => text }, null, (value) => {
 			doneCalled = true;
 			doneValue = value;
 		});
@@ -310,7 +310,7 @@ await test("TUI /web-search-domains dialog implements handleInput and dismisses 
 		return component;
 	};
 	try {
-		await commands["web-search-domains"].handler("", ctx);
+		await commands["web-search-domains"].handler("", mockContext);
 		assert.ok(lastCustomComponent, "custom dialog component was created");
 		assert.equal(typeof lastCustomComponent.handleInput, "function", "component implements the Component input contract");
 
@@ -326,56 +326,56 @@ await test("TUI /web-search-domains dialog implements handleInput and dismisses 
 		lastCustomComponent.handleInput("\u0003"); // ctrl+c
 		assert.ok(doneCalled, "ctrl+c dismisses the dialog");
 	} finally {
-		ctx.ui.custom = originalCustom;
+		mockContext.ui.custom = originalCustom;
 	}
 });
 
 await test("JS-shell / login-wall page is flagged as low-content; normal page is not", async () => {
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
-	const shell = await tools.web_fetch.execute("tc15", { url: `http://127.0.0.1:${port}/shell` }, signal, undefined, ctx);
+	const shell = await tools.web_fetch.execute("tc15", { url: `http://127.0.0.1:${port}/shell` }, signal, undefined, mockContext);
 	assert.match(shell.content[0].text, /little readable text/);
 	assert.match(shell.content[0].text, /alternate endpoint/);
 	assert.equal(shell.details.lowContent, true);
 
-	const normal = await tools.web_fetch.execute("tc16", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, ctx);
+	const normal = await tools.web_fetch.execute("tc16", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, mockContext);
 	assert.equal(normal.details.lowContent, false);
 	assert.doesNotMatch(normal.content[0].text, /little readable text/);
 });
 
 await test("out-of-band allowlist change (e.g. agent editing settings.json) is detected and surfaced", async () => {
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
-	await tools.web_fetch.execute("tc17", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, ctx); // baseline
-	const notifsBefore = notifications.length;
+	await tools.web_fetch.execute("tc17", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, mockContext); // baseline
+	const notificationsBefore = notifications.length;
 	// simulate the agent editing settings.json directly (not via /web-search-domains)
 	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1", "sneaky.example"], blockPrivateNetworks: false } });
-	const logIdx = logEntries.length;
-	await tools.web_fetch.execute("tc18", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, ctx);
-	const newNotifs = notifications.slice(notifsBefore);
+	const logStartIndex = logEntries.length;
+	await tools.web_fetch.execute("tc18", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, mockContext);
+	const newNotifications = notifications.slice(notificationsBefore);
 	assert.ok(
-		newNotifs.some((n) => n.includes("allowlist changed") && n.includes("sneaky.example")),
-		`expected a drift warning, got: ${JSON.stringify(newNotifs)}`,
+		newNotifications.some((notification) => notification.includes("allowlist changed") && notification.includes("sneaky.example")),
+		`expected a drift warning, got: ${JSON.stringify(newNotifications)}`,
 	);
-	const newLogs = logEntries.slice(logIdx);
+	const newLogs = logEntries.slice(logStartIndex);
 	assert.ok(
-		newLogs.some((e) => e.type === "web-search-log" && e.data.kind === "config"),
+		newLogs.some((logEntry) => logEntry.type === "web-search-log" && logEntry.data.kind === "config"),
 		`expected a config log entry, got: ${JSON.stringify(newLogs)}`,
 	);
 });
 
 await test("allowlist change via /web-search-domains (user-initiated) does NOT trigger the drift warning", async () => {
-	const notifsBefore = notifications.length;
-	await commands["web-search-domains"].handler("add cmdadded.example", ctx);
-	await tools.web_fetch.execute("tc19", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, ctx);
+	const notificationsBefore = notifications.length;
+	await commands["web-search-domains"].handler("add cmdadded.example", mockContext);
+	await tools.web_fetch.execute("tc19", { url: `http://127.0.0.1:${port}/page` }, signal, undefined, mockContext);
 	assert.ok(
-		!notifications.slice(notifsBefore).some((n) => n.includes("allowlist changed")),
+		!notifications.slice(notificationsBefore).some((notification) => notification.includes("allowlist changed")),
 		"user-initiated command changes must not warn",
 	);
 });
 
 await test("disabled config blocks both tools", async () => {
 	writeGlobalConfig({ webSearch: { enabled: false, useBuiltins: false, allowedDomains: ["127.0.0.1"], blockPrivateNetworks: false } });
-	await assert.rejects(() => tools.web_fetch.execute("tc8", { url: `http://127.0.0.1:${port}/` }, signal, undefined, ctx), /disabled/i);
-	await assert.rejects(() => tools.web_search.execute("tc9", { query: "q" }, signal, undefined, ctx), /disabled/i);
+	await assert.rejects(() => tools.web_fetch.execute("tc8", { url: `http://127.0.0.1:${port}/` }, signal, undefined, mockContext), /disabled/i);
+	await assert.rejects(() => tools.web_search.execute("tc9", { query: "q" }, signal, undefined, mockContext), /disabled/i);
 });
 
 server.close();

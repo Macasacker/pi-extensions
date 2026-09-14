@@ -12,68 +12,68 @@
  */
 export function sanitizeForTui(input: string): string {
 	let out = "";
-	let i = 0;
-	const n = input.length;
-	while (i < n) {
-		const c = input.charCodeAt(i);
-		if (c === 0x1b) {
-			const next = i + 1 < n ? input.charCodeAt(i + 1) : -1;
-			if (next === 0x5d) {
+	let charIndex = 0;
+	const inputLength = input.length;
+	while (charIndex < inputLength) {
+		const charCode = input.charCodeAt(charIndex);
+		if (charCode === 0x1b) {
+			const nextCharCode = charIndex + 1 < inputLength ? input.charCodeAt(charIndex + 1) : -1;
+			if (nextCharCode === 0x5d) {
 				// OSC: ESC ] ... terminated by BEL or ST (ESC \)
-				let j = i + 2;
-				while (j < n) {
-					const cc = input.charCodeAt(j);
-					if (cc === 0x07) {
-						j += 1;
+				let sequenceIndex = charIndex + 2;
+				while (sequenceIndex < inputLength) {
+					const charCode = input.charCodeAt(sequenceIndex);
+					if (charCode === 0x07) {
+						sequenceIndex += 1;
 						break;
 					}
-					if (cc === 0x1b && j + 1 < n && input.charCodeAt(j + 1) === 0x5c) {
-						j += 2;
+					if (charCode === 0x1b && sequenceIndex + 1 < inputLength && input.charCodeAt(sequenceIndex + 1) === 0x5c) {
+						sequenceIndex += 2;
 						break;
 					}
-					j += 1;
+					sequenceIndex += 1;
 				}
-				i = j; // unterminated OSC: drop to end
+				charIndex = sequenceIndex; // unterminated OSC: drop to end
 				continue;
 			}
-			if (next === 0x5b) {
+			if (nextCharCode === 0x5b) {
 				// CSI: ESC [ ... final byte in 0x40-0x7E (or 0x7F)
-				let j = i + 2;
-				while (j < n) {
-					const cc = input.charCodeAt(j);
-					if ((cc >= 0x40 && cc <= 0x7e) || cc === 0x7f) {
-						j += 1;
+				let sequenceIndex = charIndex + 2;
+				while (sequenceIndex < inputLength) {
+					const charCode = input.charCodeAt(sequenceIndex);
+					if ((charCode >= 0x40 && charCode <= 0x7e) || charCode === 0x7f) {
+						sequenceIndex += 1;
 						break;
 					}
-					j += 1;
+					sequenceIndex += 1;
 				}
-				i = j;
+				charIndex = sequenceIndex;
 				continue;
 			}
-			if (next >= 0x30 && next <= 0x3f) {
+			if (nextCharCode >= 0x30 && nextCharCode <= 0x3f) {
 				// Other escape introducer: ESC + intermediates (0x20-0x2F) + final byte
-				let j = i + 2;
-				while (j < n) {
-					const cc = input.charCodeAt(j);
-					if (cc >= 0x20 && cc <= 0x2f) {
-						j += 1;
+				let sequenceIndex = charIndex + 2;
+				while (sequenceIndex < inputLength) {
+					const charCode = input.charCodeAt(sequenceIndex);
+					if (charCode >= 0x20 && charCode <= 0x2f) {
+						sequenceIndex += 1;
 						continue;
 					}
-					j += 1;
+					sequenceIndex += 1;
 					break;
 				}
-				i = j;
+				charIndex = sequenceIndex;
 				continue;
 			}
-			i += 2; // plain two-char escape
+			charIndex += 2; // plain two-char escape
 			continue;
 		}
-		if ((c < 0x20 && c !== 0x0a && c !== 0x09) || c === 0x7f) {
-			i += 1;
+		if ((charCode < 0x20 && charCode !== 0x0a && charCode !== 0x09) || charCode === 0x7f) {
+			charIndex += 1;
 			continue;
 		}
-		out += input[i];
-		i += 1;
+		out += input[charIndex];
+		charIndex += 1;
 	}
 	return out;
 }

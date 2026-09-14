@@ -34,9 +34,9 @@ export function createBraveProvider(apiKey: string): SearchProvider {
 			const doFetch = fetchImpl ?? fetch;
 			const url = `${ENDPOINT}?q=${encodeURIComponent(query)}&count=${Math.min(limit, 20)}&search_lang=en`;
 
-			let res: Response;
+			let response: Response;
 			try {
-				res = await doFetch(url, {
+				response = await doFetch(url, {
 					method: "GET",
 					signal,
 					headers: {
@@ -45,31 +45,31 @@ export function createBraveProvider(apiKey: string): SearchProvider {
 						"X-Subscription-Token": key,
 					},
 				});
-			} catch (err) {
+			} catch (error) {
 				if (signal.aborted) throw new Error("Search cancelled");
-				throw new Error(`Brave request failed: ${err instanceof Error ? err.message : String(err)}`);
+				throw new Error(`Brave request failed: ${error instanceof Error ? error.message : String(error)}`);
 			}
 
-			if (res.status === 401 || res.status === 403) {
-				throw new Error(`Brave API rejected the key (HTTP ${res.status}). Check webSearch.braveApiKey.`);
+			if (response.status === 401 || response.status === 403) {
+				throw new Error(`Brave API rejected the key (HTTP ${response.status}). Check webSearch.braveApiKey.`);
 			}
-			if (res.status === 429) {
+			if (response.status === 429) {
 				throw new Error("Brave API rate limit exceeded (429). Free tier allows 2,000 queries/month — retry later or switch to DuckDuckGo.");
 			}
-			if (!res.ok) {
-				throw new Error(`Brave API returned HTTP ${res.status}.`);
+			if (!response.ok) {
+				throw new Error(`Brave API returned HTTP ${response.status}.`);
 			}
 
-			const data = (await readCappedText(res, MAX_BODY_BYTES).then((t) => JSON.parse(t))) as {
+			const data = (await readCappedText(response, MAX_BODY_BYTES).then((responseBody) => JSON.parse(responseBody))) as {
 				web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
 			};
 			const results: SearchResult[] = [];
-			for (const r of data.web?.results ?? []) {
-				if (!r.url) continue;
+			for (const result of data.web?.results ?? []) {
+				if (!result.url) continue;
 				results.push({
-					title: sanitizeForTui(r.title ?? r.url),
-					url: r.url,
-					snippet: sanitizeForTui(r.description ?? ""),
+					title: sanitizeForTui(result.title ?? result.url),
+					url: result.url,
+					snippet: sanitizeForTui(result.description ?? ""),
 				});
 				if (results.length >= limit) break;
 			}

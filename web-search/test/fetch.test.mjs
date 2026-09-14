@@ -14,46 +14,46 @@ function startServer(handler) {
 
 const port = (server) => server.address().port;
 
-// A: 127.0.0.1 (explicitly allowed below). B: localhost (NOT in allowlist).
-const serverA = await startServer((req, res) => {
-	if (req.url === "/page") {
-		res.writeHead(200, { "Content-Type": "text/html" });
-		res.end("<html><body><h1>Page A</h1><p>hello from A</p></body></html>");
-	} else if (req.url === "/to-b") {
-		res.writeHead(302, { Location: `http://localhost:${serverBPort}/secret` });
-		res.end();
-	} else if (req.url === "/to-file") {
-		res.writeHead(302, { Location: "file:///etc/passwd" });
-		res.end();
-	} else if (req.url === "/to-userinfo") {
-		res.writeHead(302, { Location: `http://user@localhost:${serverBPort}/secret` });
-		res.end();
-	} else if (req.url === "/to-protorel") {
-		res.writeHead(302, { Location: `//localhost:${serverBPort}/secret` });
-		res.end();
-	} else if (req.url === "/big") {
-		res.writeHead(200, { "Content-Type": "text/plain" });
+// allowedServer: 127.0.0.1 (explicitly allowed below). disallowedServer: localhost (NOT in allowlist).
+const allowedServer = await startServer((request, response) => {
+	if (request.url === "/page") {
+		response.writeHead(200, { "Content-Type": "text/html" });
+		response.end("<html><body><h1>Page A</h1><p>hello from A</p></body></html>");
+	} else if (request.url === "/to-b") {
+		response.writeHead(302, { Location: `http://localhost:${disallowedServerPort}/secret` });
+		response.end();
+	} else if (request.url === "/to-file") {
+		response.writeHead(302, { Location: "file:///etc/passwd" });
+		response.end();
+	} else if (request.url === "/to-userinfo") {
+		response.writeHead(302, { Location: `http://user@localhost:${disallowedServerPort}/secret` });
+		response.end();
+	} else if (request.url === "/to-protorel") {
+		response.writeHead(302, { Location: `//localhost:${disallowedServerPort}/secret` });
+		response.end();
+	} else if (request.url === "/big") {
+		response.writeHead(200, { "Content-Type": "text/plain" });
 		const chunk = "x".repeat(4096);
-		for (let i = 0; i < 32; i++) res.write(chunk); // 128KB
-		res.end();
-	} else if (req.url === "/slow") {
+		for (let chunkIndex = 0; chunkIndex < 32; chunkIndex++) response.write(chunk); // 128KB
+		response.end();
+	} else if (request.url === "/slow") {
 		// never responds
-	} else if (req.url === "/notfound") {
-		res.writeHead(404, { "Content-Type": "text/plain" });
-		res.end("nope");
+	} else if (request.url === "/notfound") {
+		response.writeHead(404, { "Content-Type": "text/plain" });
+		response.end("nope");
 	} else {
-		res.writeHead(200, { "Content-Type": "text/html" });
-		res.end("<p>root A</p>");
+		response.writeHead(200, { "Content-Type": "text/html" });
+		response.end("<p>root A</p>");
 	}
 });
 
-const serverB = await startServer((req, res) => {
-	res.writeHead(200, { "Content-Type": "text/html" });
-	res.end("<p>you should never see me</p>");
+const disallowedServer = await startServer((request, response) => {
+	response.writeHead(200, { "Content-Type": "text/html" });
+	response.end("<p>you should never see me</p>");
 });
 
-const serverAPort = port(serverA);
-const serverBPort = port(serverB);
+const allowedServerPort = port(allowedServer);
+const disallowedServerPort = port(disallowedServer);
 
 const allowlist = {
 	allowedDomains: ["127.0.0.1"],
@@ -61,7 +61,7 @@ const allowlist = {
 	blockPrivateNetworks: false,
 };
 
-const base = {
+const defaultFetchOptions = {
 	timeoutMs: 5000,
 	maxBytes: 1024 * 1024,
 	maxRedirects: 5,
@@ -69,110 +69,110 @@ const base = {
 };
 
 await test("fetches an allowed host", async () => {
-	const res = await safeFetch(`http://127.0.0.1:${serverAPort}/page`, base);
-	assert.equal(res.status, 200);
-	assert.ok(res.body.includes("hello from A"));
-	assert.equal(res.redirects.length, 0);
-	assert.ok(res.finalUrl.includes("/page"));
+	const fetchResult = await safeFetch(`http://127.0.0.1:${allowedServerPort}/page`, defaultFetchOptions);
+	assert.equal(fetchResult.status, 200);
+	assert.ok(fetchResult.body.includes("hello from A"));
+	assert.equal(fetchResult.redirects.length, 0);
+	assert.ok(fetchResult.finalUrl.includes("/page"));
 });
 
 await test("redirect to a non-allowed host aborts at the hop", async () => {
 	try {
-		await safeFetch(`http://127.0.0.1:${serverAPort}/to-b`, base);
+		await safeFetch(`http://127.0.0.1:${allowedServerPort}/to-b`, defaultFetchOptions);
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchBlockedError, `expected FetchBlockedError, got ${err.constructor.name}: ${err.message}`);
-		assert.match(err.message, /localhost/);
+	} catch (error) {
+		assert.ok(error instanceof FetchBlockedError, `expected FetchBlockedError, got ${error.constructor.name}: ${error.message}`);
+		assert.match(error.message, /localhost/);
 	}
 });
 
 await test("redirect to a non-http scheme (file://) aborts", async () => {
 	try {
-		await safeFetch(`http://127.0.0.1:${serverAPort}/to-file`, base);
+		await safeFetch(`http://127.0.0.1:${allowedServerPort}/to-file`, defaultFetchOptions);
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchBlockedError, `expected FetchBlockedError, got ${err.constructor.name}`);
-		assert.match(err.message, /scheme/i);
+	} catch (error) {
+		assert.ok(error instanceof FetchBlockedError, `expected FetchBlockedError, got ${error.constructor.name}`);
+		assert.match(error.message, /scheme/i);
 	}
 });
 
 await test("redirect with userinfo in Location is validated on the real host", async () => {
 	try {
-		await safeFetch(`http://127.0.0.1:${serverAPort}/to-userinfo`, base);
+		await safeFetch(`http://127.0.0.1:${allowedServerPort}/to-userinfo`, defaultFetchOptions);
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchBlockedError, `expected FetchBlockedError, got ${err.constructor.name}`);
-		assert.match(err.message, /localhost/);
+	} catch (error) {
+		assert.ok(error instanceof FetchBlockedError, `expected FetchBlockedError, got ${error.constructor.name}`);
+		assert.match(error.message, /localhost/);
 	}
 });
 
 await test("protocol-relative redirect Location is resolved and re-validated", async () => {
 	try {
-		await safeFetch(`http://127.0.0.1:${serverAPort}/to-protorel`, base);
+		await safeFetch(`http://127.0.0.1:${allowedServerPort}/to-protorel`, defaultFetchOptions);
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchBlockedError, `expected FetchBlockedError, got ${err.constructor.name}`);
-		assert.match(err.message, /localhost/);
+	} catch (error) {
+		assert.ok(error instanceof FetchBlockedError, `expected FetchBlockedError, got ${error.constructor.name}`);
+		assert.match(error.message, /localhost/);
 	}
 });
 
 await test("redirect loop is cut off by maxRedirects", async () => {
 	// point /loop at itself via a dedicated handler
-	const loopServer = await startServer((req, res) => {
-		res.writeHead(302, { Location: `http://127.0.0.1:${port(loopServer)}/loop` });
-		res.end();
+	const loopServer = await startServer((request, response) => {
+		response.writeHead(302, { Location: `http://127.0.0.1:${port(loopServer)}/loop` });
+		response.end();
 	});
 	try {
-		await safeFetch(`http://127.0.0.1:${port(loopServer)}/loop`, { ...base, maxRedirects: 3 });
+		await safeFetch(`http://127.0.0.1:${port(loopServer)}/loop`, { ...defaultFetchOptions, maxRedirects: 3 });
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchError, `expected FetchError, got ${err.constructor.name}`);
-		assert.match(err.message, /too many redirects/);
+	} catch (error) {
+		assert.ok(error instanceof FetchError, `expected FetchError, got ${error.constructor.name}`);
+		assert.match(error.message, /too many redirects/);
 	} finally {
 		loopServer.close();
 	}
 });
 
 await test("body is capped at maxBytes and marked truncated", async () => {
-	const res = await safeFetch(`http://127.0.0.1:${serverAPort}/big`, { ...base, maxBytes: 8192 });
-	assert.equal(res.bodyTruncated, true);
-	assert.ok(res.body.length <= 8192);
-	assert.equal(res.bytes, 8192);
+	const fetchResult = await safeFetch(`http://127.0.0.1:${allowedServerPort}/big`, { ...defaultFetchOptions, maxBytes: 8192 });
+	assert.equal(fetchResult.bodyTruncated, true);
+	assert.ok(fetchResult.body.length <= 8192);
+	assert.equal(fetchResult.bytes, 8192);
 });
 
 await test("timeout produces a FetchError", async () => {
 	try {
-		await safeFetch(`http://127.0.0.1:${serverAPort}/slow`, { ...base, timeoutMs: 300 });
+		await safeFetch(`http://127.0.0.1:${allowedServerPort}/slow`, { ...defaultFetchOptions, timeoutMs: 300 });
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchError);
-		assert.match(err.message, /timed out/);
+	} catch (error) {
+		assert.ok(error instanceof FetchError);
+		assert.match(error.message, /timed out/);
 	}
 });
 
 await test("HTTP 404 surfaces as FetchError with status", async () => {
 	try {
-		await safeFetch(`http://127.0.0.1:${serverAPort}/notfound`, base);
+		await safeFetch(`http://127.0.0.1:${allowedServerPort}/notfound`, defaultFetchOptions);
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchError);
-		assert.equal(err.status, 404);
+	} catch (error) {
+		assert.ok(error instanceof FetchError);
+		assert.equal(error.status, 404);
 	}
 });
 
 await test("initial URL outside allowlist is blocked before any request", async () => {
 	let requests = 0;
-	const spyServer = await startServer((req, res) => {
+	const spyServer = await startServer((request, response) => {
 		requests += 1;
-		res.writeHead(200);
-		res.end("x");
+		response.writeHead(200);
+		response.end("x");
 	});
 	try {
 		try {
-			await safeFetch(`http://localhost:${port(spyServer)}/`, base);
+			await safeFetch(`http://localhost:${port(spyServer)}/`, defaultFetchOptions);
 			assert.fail("should have thrown");
-		} catch (err) {
-			assert.ok(err instanceof FetchBlockedError);
+		} catch (error) {
+			assert.ok(error instanceof FetchBlockedError);
 		}
 		assert.equal(requests, 0, "no request should reach a non-allowed host");
 	} finally {
@@ -182,27 +182,27 @@ await test("initial URL outside allowlist is blocked before any request", async 
 
 await test("non-http scheme is blocked", async () => {
 	try {
-		await safeFetch("file:///etc/passwd", base);
+		await safeFetch("file:///etc/passwd", defaultFetchOptions);
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchBlockedError);
-		assert.match(err.message, /scheme/i);
+	} catch (error) {
+		assert.ok(error instanceof FetchBlockedError);
+		assert.match(error.message, /scheme/i);
 	}
 });
 
 await test("caller abort cancels the fetch", async () => {
 	const controller = new AbortController();
-	const p = safeFetch(`http://127.0.0.1:${serverAPort}/slow`, { ...base, timeoutMs: 10000, signal: controller.signal });
+	const fetchPromise = safeFetch(`http://127.0.0.1:${allowedServerPort}/slow`, { ...defaultFetchOptions, timeoutMs: 10000, signal: controller.signal });
 	setTimeout(() => controller.abort(), 50);
 	try {
-		await p;
+		await fetchPromise;
 		assert.fail("should have thrown");
-	} catch (err) {
-		assert.ok(err instanceof FetchError);
-		assert.match(err.message, /cancelled/);
+	} catch (error) {
+		assert.ok(error instanceof FetchError);
+		assert.match(error.message, /cancelled/);
 	}
 });
 
-serverA.close();
-serverB.close();
+allowedServer.close();
+disallowedServer.close();
 finish();

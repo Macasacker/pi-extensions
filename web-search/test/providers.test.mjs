@@ -13,7 +13,7 @@ function fakeFetch(body, { status = 200, json = false } = {}) {
 		});
 }
 
-const DDG_FIXTURE = `
+const DUCKDUCKGO_HTML_FIXTURE = `
 <html><body>
   <div class="result">
     <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdeveloper.mozilla.org%2Fen-US%2Fdocs%2FWeb&rut=abc">MDN Docs</a>
@@ -33,7 +33,7 @@ const DDG_FIXTURE = `
 </body></html>`;
 
 await test("duckduckgo: decodes uddg redirect wrappers to real URLs", async () => {
-	const results = await duckduckgoProvider.search("mdn", 10, new AbortController().signal, fakeFetch(DDG_FIXTURE));
+	const results = await duckduckgoProvider.search("mdn", 10, new AbortController().signal, fakeFetch(DUCKDUCKGO_HTML_FIXTURE));
 	assert.equal(results.length, 3, "the 'more results' link must not count as a result");
 	assert.equal(results[0].url, "https://developer.mozilla.org/en-US/docs/Web");
 	assert.equal(results[0].title, "MDN Docs");
@@ -43,7 +43,7 @@ await test("duckduckgo: decodes uddg redirect wrappers to real URLs", async () =
 });
 
 await test("duckduckgo: respects the result limit", async () => {
-	const results = await duckduckgoProvider.search("mdn", 2, new AbortController().signal, fakeFetch(DDG_FIXTURE));
+	const results = await duckduckgoProvider.search("mdn", 2, new AbortController().signal, fakeFetch(DUCKDUCKGO_HTML_FIXTURE));
 	assert.equal(results.length, 2);
 });
 

@@ -64,9 +64,9 @@ function combinedSignal(caller: AbortSignal | undefined, timeoutMs: number): Abo
 	return caller ? AbortSignal.any([caller, timeout]) : timeout;
 }
 
-export async function readBodyCapped(res: Response, maxBytes: number): Promise<{ body: string; bytes: number; truncated: boolean }> {
-	if (!res.body) return { body: "", bytes: 0, truncated: false };
-	const reader = res.body.getReader();
+export async function readBodyCapped(response: Response, maxBytes: number): Promise<{ body: string; bytes: number; truncated: boolean }> {
+	if (!response.body) return { body: "", bytes: 0, truncated: false };
+	const reader = response.body.getReader();
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	let truncated = false;
@@ -84,14 +84,14 @@ export async function readBodyCapped(res: Response, maxBytes: number): Promise<{
 		}
 	}
 	let merged = new Uint8Array(0);
-	for (const c of chunks) {
+	for (const chunk of chunks) {
 		const room = maxBytes - merged.byteLength;
 		if (room <= 0) break;
-		const slice = c.byteLength <= room ? c : c.slice(0, room);
-		const next = new Uint8Array(merged.byteLength + slice.byteLength);
-		next.set(merged);
-		next.set(slice, merged.byteLength);
-		merged = next;
+		const slice = chunk.byteLength <= room ? chunk : chunk.slice(0, room);
+		const extended = new Uint8Array(merged.byteLength + slice.byteLength);
+		extended.set(merged);
+		extended.set(slice, merged.byteLength);
+		merged = extended;
 	}
 	const body = new TextDecoder("utf-8", { fatal: false }).decode(merged);
 	return { body, bytes: Math.min(total, maxBytes), truncated };
@@ -101,8 +101,8 @@ export async function readBodyCapped(res: Response, maxBytes: number): Promise<{
  * Read a response body as text with a hard byte cap (for search-provider
  * responses, which never go through safeFetch).
  */
-export async function readCappedText(res: Response, maxBytes: number): Promise<string> {
-	const { body } = await readBodyCapped(res, maxBytes);
+export async function readCappedText(response: Response, maxBytes: number): Promise<string> {
+	const { body } = await readBodyCapped(response, maxBytes);
 	return body;
 }
 
@@ -111,23 +111,23 @@ export async function readCappedText(res: Response, maxBytes: number): Promise<s
  * every hop. The initial URL must already be allowed by the caller; this is
  * re-checked here as a backstop.
  */
-export async function safeFetch(url: string, opts: SafeFetchOptions): Promise<SafeFetchResult> {
-	const doFetch = opts.fetchImpl ?? fetch;
+export async function safeFetch(url: string, options: SafeFetchOptions): Promise<SafeFetchResult> {
+	const doFetch = options.fetchImpl ?? fetch;
 	const redirects: RedirectHop[] = [];
 	let current = url;
 
 	for (let hop = 0; ; hop++) {
-		const check = checkUrl(current, opts.allowlist);
+		const check = checkUrl(current, options.allowlist);
 		if (!check.allowed) throw new FetchBlockedError(current, check.reason ?? "not allowed");
 
-		if (hop > opts.maxRedirects) {
-			throw new FetchError(current, `too many redirects (max ${opts.maxRedirects})`);
+		if (hop > options.maxRedirects) {
+			throw new FetchError(current, `too many redirects (max ${options.maxRedirects})`);
 		}
 
-		const signal = combinedSignal(opts.signal, opts.timeoutMs);
-		let res: Response;
+		const signal = combinedSignal(options.signal, options.timeoutMs);
+		let response: Response;
 		try {
-			res = await doFetch(current, {
+			response = await doFetch(current, {
 				method: "GET",
 				redirect: "manual",
 				signal,
@@ -137,45 +137,45 @@ export async function safeFetch(url: string, opts: SafeFetchOptions): Promise<Sa
 					"Accept-Language": "en-US,en;q=0.9",
 				},
 			});
-		} catch (err) {
-			if (opts.signal?.aborted) throw new FetchError(current, "cancelled");
+		} catch (error) {
+			if (options.signal?.aborted) throw new FetchError(current, "cancelled");
 			// AbortSignal.timeout rejects with name "TimeoutError"; plain aborts with "AbortError".
-			if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
-				throw new FetchError(current, `timed out after ${opts.timeoutMs}ms`);
+			if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+				throw new FetchError(current, `timed out after ${options.timeoutMs}ms`);
 			}
-			throw new FetchError(current, err instanceof Error ? err.message : String(err));
+			throw new FetchError(current, error instanceof Error ? error.message : String(error));
 		}
 
 		// Redirect?
-		if (res.status >= 300 && res.status < 400) {
-			const location = res.headers.get("location");
-			res.body?.cancel().catch(() => {});
-			if (!location) throw new FetchError(current, `redirect ${res.status} without Location header`);
-			let next: string;
+		if (response.status >= 300 && response.status < 400) {
+			const location = response.headers.get("location");
+			response.body?.cancel().catch(() => {});
+			if (!location) throw new FetchError(current, `redirect ${response.status} without Location header`);
+			let nextUrl: string;
 			try {
-				next = new URL(location, current).toString();
+				nextUrl = new URL(location, current).toString();
 			} catch {
 				throw new FetchError(current, `invalid redirect Location: ${location}`);
 			}
-			redirects.push({ from: current, to: next });
-			current = next;
+			redirects.push({ from: current, to: nextUrl });
+			current = nextUrl;
 			continue; // loop re-validates `current` at the top
 		}
 
-		if (res.status >= 400) {
-			res.body?.cancel().catch(() => {});
-			throw new FetchError(current, `HTTP ${res.status}`, res.status);
+		if (response.status >= 400) {
+			response.body?.cancel().catch(() => {});
+			throw new FetchError(current, `HTTP ${response.status}`, response.status);
 		}
 
-		const { body, bytes, truncated } = await readBodyCapped(res, opts.maxBytes);
+		const { body, bytes, truncated } = await readBodyCapped(response, options.maxBytes);
 		return {
 			finalUrl: current,
-			status: res.status,
+			status: response.status,
 			body,
 			bodyTruncated: truncated,
 			bytes,
 			redirects,
-			contentType: res.headers.get("content-type") ?? "",
+			contentType: response.headers.get("content-type") ?? "",
 		};
 	}
 }

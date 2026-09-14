@@ -24,14 +24,14 @@ function decodeDdgHref(href: string): string | null {
 	if (href.startsWith("//")) full = "https:" + href;
 	else if (!href.startsWith("http://") && !href.startsWith("https://")) return null;
 	try {
-		const u = new URL(full);
-		if (u.hostname === "duckduckgo.com" || u.hostname.endsWith(".duckduckgo.com")) {
-			const uddg = u.searchParams.get("uddg");
+		const parsedUrl = new URL(full);
+		if (parsedUrl.hostname === "duckduckgo.com" || parsedUrl.hostname.endsWith(".duckduckgo.com")) {
+			const uddg = parsedUrl.searchParams.get("uddg");
 			if (uddg) return decodeURIComponent(uddg);
 			// A bare duckduckgo.com link (e.g. a "more results" link) is not a result.
 			return null;
 		}
-		return u.toString();
+		return parsedUrl.toString();
 	} catch {
 		return null;
 	}
@@ -46,9 +46,9 @@ export const duckduckgoProvider: SearchProvider = {
 		const doFetch = fetchImpl ?? fetch;
 		const url = `${ENDPOINT}?q=${encodeURIComponent(query)}`;
 
-		let res: Response;
+		let response: Response;
 		try {
-			res = await doFetch(url, {
+			response = await doFetch(url, {
 				method: "GET",
 				signal,
 				headers: {
@@ -57,17 +57,17 @@ export const duckduckgoProvider: SearchProvider = {
 					"Accept-Language": "en-US,en;q=0.9",
 				},
 			});
-		} catch (err) {
+		} catch (error) {
 			if (signal.aborted) throw new Error("Search cancelled");
-			throw new Error(`DuckDuckGo request failed: ${err instanceof Error ? err.message : String(err)}`);
+			throw new Error(`DuckDuckGo request failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 
-		if (!res.ok) {
-			throw new Error(`DuckDuckGo returned HTTP ${res.status}. Consider configuring the Brave provider (webSearch.provider: "brave" + braveApiKey).`);
+		if (!response.ok) {
+			throw new Error(`DuckDuckGo returned HTTP ${response.status}. Consider configuring the Brave provider (webSearch.provider: "brave" + braveApiKey).`);
 		}
 
-		const html = await readCappedText(res, MAX_BODY_BYTES);
-		if (CHALLENGE_MARKERS.some((m) => html.toLowerCase().includes(m)) && !html.includes("result__a")) {
+		const html = await readCappedText(response, MAX_BODY_BYTES);
+		if (CHALLENGE_MARKERS.some((challengeMarker) => html.toLowerCase().includes(challengeMarker)) && !html.includes("result__a")) {
 			throw new Error(
 				"DuckDuckGo served a challenge page (likely rate limiting or datacenter IP). " +
 					"Retry later, or configure the Brave provider (webSearch.provider: \"brave\" + braveApiKey) for reliable results.",
@@ -77,11 +77,11 @@ export const duckduckgoProvider: SearchProvider = {
 		const root = parse(html);
 		const results: SearchResult[] = [];
 		for (const item of root.querySelectorAll(".result")) {
-			const a = item.querySelector("a.result__a");
-			const urlEl = a?.getAttribute("href");
-			const realUrl = urlEl ? decodeDdgHref(urlEl) : null;
+			const resultLink = item.querySelector("a.result__a");
+			const resultHref = resultLink?.getAttribute("href");
+			const realUrl = resultHref ? decodeDdgHref(resultHref) : null;
 			if (!realUrl) continue;
-			const title = sanitizeForTui(a?.text?.trim() ?? "");
+			const title = sanitizeForTui(resultLink?.text?.trim() ?? "");
 			const snippet = sanitizeForTui(item.querySelector(".result__snippet")?.text?.trim() ?? "");
 			if (!title) continue;
 			results.push({ title, url: realUrl, snippet });

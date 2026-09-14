@@ -9,7 +9,6 @@ import { sanitizeForTui } from "./sanitize.ts";
 // Every string rendered below is either web-derived or LLM-supplied; sanitize
 // so terminal escape sequences (OSC 52 clipboard writes, CSI repaints, …)
 // from fetched pages or prompt-injected models can't reach the TUI.
-const s = sanitizeForTui;
 
 type Theme = { fg(color: string, text: string): string };
 
@@ -33,14 +32,14 @@ export interface FetchDetails {
 }
 
 function firstText(result: { content?: Array<{ type: string; text?: string }> }): string {
-	for (const c of result.content ?? []) {
-		if (c.type === "text" && c.text) return c.text;
+	for (const content of result.content ?? []) {
+		if (content.type === "text" && content.text) return content.text;
 	}
 	return "";
 }
 
 export function renderSearchCall(args: { query: string; max_results?: number }, theme: Theme): Text {
-	let text = theme.fg("muted", `search: ${s(args.query)}`);
+	let text = theme.fg("muted", `search: ${sanitizeForTui(args.query)}`);
 	if (args.max_results) text += ` ${theme.fg("dim", `(${args.max_results})`)}`;
 	return new Text(text, 0, 0);
 }
@@ -54,23 +53,23 @@ export function renderSearchResult(
 	if (result.isError) {
 		// Error text may embed LLM-supplied URLs (e.g. FetchBlockedError echoes
 		// the raw url) — sanitize before it reaches the TUI.
-		return new Text(theme.fg("error", `web_search: ${s(firstText(result).split("\n")[0])}`), 0, 0);
+		return new Text(theme.fg("error", `web_search: ${sanitizeForTui(firstText(result).split("\n")[0])}`), 0, 0);
 	}
-	const d = (result.details ?? {}) as SearchDetails;
-	const results = d.results ?? [];
+	const details = (result.details ?? {}) as SearchDetails;
+	const results = details.results ?? [];
 	const shown = expanded ? results : results.slice(0, 3);
-	let text = theme.fg("success", `✓ ${results.length} result(s) from ${s(d.provider ?? "web")}`);
-	if (d.hiddenCount) text += ` ${theme.fg("dim", `· ${d.hiddenCount} hidden by allowlist`)}`;
-	for (const r of shown) {
-		text += `\n  ${s(r.title)}`;
-		text += `\n  ${theme.fg("muted", s(r.url))}`;
+	let text = theme.fg("success", `✓ ${results.length} result(s) from ${sanitizeForTui(details.provider ?? "web")}`);
+	if (details.hiddenCount) text += ` ${theme.fg("dim", `· ${details.hiddenCount} hidden by allowlist`)}`;
+	for (const searchResult of shown) {
+		text += `\n  ${sanitizeForTui(searchResult.title)}`;
+		text += `\n  ${theme.fg("muted", sanitizeForTui(searchResult.url))}`;
 	}
 	if (!expanded && results.length > 3) text += `\n  ${theme.fg("dim", `… ${results.length - 3} more (expand for all)`)}`;
 	return new Text(text, 0, 0);
 }
 
 export function renderFetchCall(args: { url: string }, theme: Theme): Text {
-	return new Text(theme.fg("muted", `fetch: ${s(args.url)}`), 0, 0);
+	return new Text(theme.fg("muted", `fetch: ${sanitizeForTui(args.url)}`), 0, 0);
 }
 
 export function renderFetchResult(
@@ -82,13 +81,13 @@ export function renderFetchResult(
 	if (result.isError) {
 		// Error text may embed LLM-supplied URLs (e.g. FetchBlockedError echoes
 		// the raw url) — sanitize before it reaches the TUI.
-		return new Text(theme.fg("error", `web_fetch: ${s(firstText(result).split("\n")[0])}`), 0, 0);
+		return new Text(theme.fg("error", `web_fetch: ${sanitizeForTui(firstText(result).split("\n")[0])}`), 0, 0);
 	}
-	const d = (result.details ?? {}) as FetchDetails;
-	let text = theme.fg("success", `✓ ${d.status ?? "?"} ${s(d.finalUrl ?? d.url ?? "")}`);
-	if (d.title) text += ` ${theme.fg("dim", `· ${s(d.title)}`)}`;
-	text += ` ${theme.fg("dim", `· ${Math.round((d.bytes ?? 0) / 1024)}KB${d.truncated ? " (truncated)" : ""}${d.redirectCount ? ` · ${d.redirectCount} redirect(s)` : ""}`)}`;
-	if (d.lowContent) text += ` ${theme.fg("warning", "· little readable text (JS page or login wall?)")}`;
-	if (expanded && d.domain) text += `\n  ${theme.fg("dim", `domain: ${d.domain}`)}`;
+	const details = (result.details ?? {}) as FetchDetails;
+	let text = theme.fg("success", `✓ ${details.status ?? "?"} ${sanitizeForTui(details.finalUrl ?? details.url ?? "")}`);
+	if (details.title) text += ` ${theme.fg("dim", `· ${sanitizeForTui(details.title)}`)}`;
+	text += ` ${theme.fg("dim", `· ${Math.round((details.bytes ?? 0) / 1024)}KB${details.truncated ? " (truncated)" : ""}${details.redirectCount ? ` · ${details.redirectCount} redirect(s)` : ""}`)}`;
+	if (details.lowContent) text += ` ${theme.fg("warning", "· little readable text (JS page or login wall?)")}`;
+	if (expanded && details.domain) text += `\n  ${theme.fg("dim", `domain: ${details.domain}`)}`;
 	return new Text(text, 0, 0);
 }

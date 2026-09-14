@@ -42,8 +42,8 @@ await test("DEL is dropped", () => {
 });
 
 await test("plain text (incl. unicode) passes through unchanged", () => {
-	const s = "héllo wörld — ✓ 100% <b>bold</b>";
-	assert.equal(sanitizeForTui(s), s);
+	const plainText = "héllo wörld — ✓ 100% <b>bold</b>";
+	assert.equal(sanitizeForTui(plainText), plainText);
 });
 
 await test("extraction sanitizes escape bytes from page title and text", () => {

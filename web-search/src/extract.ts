@@ -18,22 +18,22 @@ export interface ExtractedPage {
 }
 
 function dropTags(root: HTMLElement): void {
-	for (const el of [...root.querySelectorAll("*")]) {
-		if (DROP_TAGS.has(el.tagName)) el.remove();
+	for (const element of [...root.querySelectorAll("*")]) {
+		if (DROP_TAGS.has(element.tagName)) element.remove();
 	}
 }
 
-function collectText(el: Node, out: string[]): void {
-	for (const child of el.childNodes) {
+function collectText(element: Node, textFragments: string[]): void {
+	for (const child of element.childNodes) {
 		if (child.nodeType === 3) {
 			// Collapse ALL whitespace inside a text node: real line breaks come
 			// from block boundaries, so embedded newlines are just soft wrapping.
-			out.push(child.text.replace(/\s+/g, " "));
+			textFragments.push(child.text.replace(/\s+/g, " "));
 		} else if (child instanceof HTMLElement) {
 			const block = BLOCK_TAGS.has(child.tagName);
-			if (block) out.push("\n");
-			collectText(child, out);
-			if (block) out.push("\n");
+			if (block) textFragments.push("\n");
+			collectText(child, textFragments);
+			if (block) textFragments.push("\n");
 		}
 	}
 }
@@ -59,20 +59,20 @@ export function extractReadableText(html: string): ExtractedPage {
 		root.querySelector("body") ||
 		root;
 
-	const out: string[] = [];
-	collectText(main, out);
+	const textFragments: string[] = [];
+	collectText(main, textFragments);
 
 	// Normalize whitespace: collapse blank-line runs, trim line ends.
 	// Then strip terminal escape sequences / control chars: this text is
 	// rendered in the TUI and sent to the LLM, both of which would otherwise
 	// be sinks for OSC/CSI injection from the fetched page.
 	const text = sanitizeForTui(
-		out
+		textFragments
 			.join("")
 			.replace(/[ \t]+\n/g, "\n")
 			.replace(/\n{3,}/g, "\n\n")
 			.split("\n")
-			.map((l) => l.trim())
+			.map((line) => line.trim())
 			.join("\n")
 			.replace(/\n{3,}/g, "\n\n")
 			.trim(),
