@@ -106,6 +106,55 @@ export async function readCappedText(response: Response, maxBytes: number): Prom
 	return body;
 }
 
+interface FetchOneHopDeps {
+	doFetch: typeof fetch;
+	callerSignal: AbortSignal | undefined;
+	timeoutMs: number;
+}
+
+/**
+ * Perform a single GET hop with the combined abort signal (caller signal +
+ * per-hop timeout) and map its failures to FetchError.
+ */
+async function fetchOneHop(url: string, deps: FetchOneHopDeps): Promise<Response> {
+	const signal = combinedSignal(deps.callerSignal, deps.timeoutMs);
+	try {
+		return await deps.doFetch(url, {
+			method: "GET",
+			redirect: "manual",
+			signal,
+			headers: {
+				"User-Agent": "pi-web-search/0.1 (+https://github.com/earendil-works/pi-coding-agent)",
+				Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+				"Accept-Language": "en-US,en;q=0.9",
+			},
+		});
+	} catch (error) {
+		if (deps.callerSignal?.aborted) throw new FetchError(url, "cancelled");
+		// AbortSignal.timeout rejects with name "TimeoutError"; plain aborts with "AbortError".
+		if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+			throw new FetchError(url, `timed out after ${deps.timeoutMs}ms`);
+		}
+		throw new FetchError(url, error instanceof Error ? error.message : String(error));
+	}
+}
+
+/**
+ * Resolve a 3xx response's Location header to the next hop's URL.
+ */
+function resolveRedirectTarget(response: Response, currentUrl: string): string {
+	const location = response.headers.get("location");
+	// Best-effort drain: release the 3xx body so the connection can be reused;
+	// a cancel failure is not an error worth surfacing.
+	response.body?.cancel().catch(() => {});
+	if (!location) throw new FetchError(currentUrl, `redirect ${response.status} without Location header`);
+	try {
+		return new URL(location, currentUrl).toString();
+	} catch {
+		throw new FetchError(currentUrl, `invalid redirect Location: ${location}`);
+	}
+}
+
 /**
  * Fetch a URL, following redirects while re-validating the allowlist at
  * every hop. The initial URL must already be allowed by the caller; this is
@@ -124,39 +173,11 @@ export async function safeFetch(url: string, options: SafeFetchOptions): Promise
 			throw new FetchError(current, `too many redirects (max ${options.maxRedirects})`);
 		}
 
-		const signal = combinedSignal(options.signal, options.timeoutMs);
-		let response: Response;
-		try {
-			response = await doFetch(current, {
-				method: "GET",
-				redirect: "manual",
-				signal,
-				headers: {
-					"User-Agent": "pi-web-search/0.1 (+https://github.com/earendil-works/pi-coding-agent)",
-					Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-					"Accept-Language": "en-US,en;q=0.9",
-				},
-			});
-		} catch (error) {
-			if (options.signal?.aborted) throw new FetchError(current, "cancelled");
-			// AbortSignal.timeout rejects with name "TimeoutError"; plain aborts with "AbortError".
-			if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
-				throw new FetchError(current, `timed out after ${options.timeoutMs}ms`);
-			}
-			throw new FetchError(current, error instanceof Error ? error.message : String(error));
-		}
+		const response = await fetchOneHop(current, { doFetch, callerSignal: options.signal, timeoutMs: options.timeoutMs });
 
 		// Redirect?
 		if (response.status >= 300 && response.status < 400) {
-			const location = response.headers.get("location");
-			response.body?.cancel().catch(() => {});
-			if (!location) throw new FetchError(current, `redirect ${response.status} without Location header`);
-			let nextUrl: string;
-			try {
-				nextUrl = new URL(location, current).toString();
-			} catch {
-				throw new FetchError(current, `invalid redirect Location: ${location}`);
-			}
+			const nextUrl = resolveRedirectTarget(response, current);
 			redirects.push({ from: current, to: nextUrl });
 			current = nextUrl;
 			continue; // loop re-validates `current` at the top
