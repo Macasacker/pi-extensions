@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 executing (phase 5 complete 2026-09-14; code `49a97e0`, `9a21473`, `95623a3`; 140/140 tests; live smoke green).**
+> **STATUS: IN PROGRESS — phase 6 executing (wave 6a `43bcafc` done).**
 > Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -299,8 +299,11 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
 
 ### Phase 6 — Control-flow polish in leaf modules
 
-- [ ] 22. `checkUrl` → thin dispatcher: `checkUrlScheme`, `checkIpLiteralHost`,
-    `checkDomainHost` (domains.ts).
+- [x] 22. `checkUrl` → thin dispatcher: `checkUrlScheme`, `checkIpLiteralHost`,
+    `checkDomainHost` (domains.ts). **Deviation:** regime functions are
+    module-private (frozen export surface unchanged); `checkUrl`'s 2nd param
+    renamed `opts` → `allowlistOptions` (closes the options-bag vocabulary
+    carry-over). Wave 6a, committed `43bcafc`.
 - [ ] 23. `safeFetch` loop body → `fetchOneHop(url, signal)` and
     `resolveRedirectTarget(response, currentUrl)` (fetch.ts).
 - [ ] 24. Providers → shared `fetchProviderResponse(url, { signal, headers })`

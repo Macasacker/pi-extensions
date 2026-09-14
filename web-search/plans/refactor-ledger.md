@@ -301,8 +301,20 @@ Phase 5 is broken into per-module waves (each wave keeps all gates green):
 Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 `95623a3` + docs commits; 140/140 tests; live smoke green).
 
-1. [ ] **6a — item 22**: `checkUrl` → thin dispatcher (`checkUrlScheme`,
-   `checkIpLiteralHost`, `checkDomainHost` in domains.ts).
+1. [x] **6a — item 22**: `checkUrl` → thin dispatcher (`checkUrlScheme`,
+   `checkIpLiteralHost`, `checkDomainHost` in domains.ts). Dispatcher owns
+   parse → scheme → normalize → empty-host/leading-dot guards → regime
+   dispatch on `isIpLiteral(normalizedHost)`; regime functions are
+   module-private and take `(host, allowlistOptions)` (reuses the existing
+   bag — no new type). Declared deviation: `checkUrl`'s 2nd param renamed
+   `opts` → `allowlistOptions` (closes the phase-2 options-bag vocabulary
+   carry-over; positional-safe for all consumers). — done: committed
+   `43bcafc`; gates green (140/140, tsc, lint); adversarial review
+   **Verdict: Ready** — reviewer ran an independent 97,920-case differential
+   (85 URLs × 1,152 option sets, superset of the implementer's 2,552), all
+   byte-identical; bypass matrix re-verified (userinfo, IDN, IPv4-mapped
+   IPv6, zone IDs, decimal IPs, IP grants, `allowSubdomains: false`
+   boundaries). No carry-overs.
 2. [ ] **6b — item 23**: `safeFetch` loop body → `fetchOneHop(url, signal)` +
    `resolveRedirectTarget(response, currentUrl)` (fetch.ts).
 3. [ ] **6c — item 24**: providers → shared `fetchProviderResponse(url,
@@ -328,8 +340,8 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Next action
 
-Phase 6, wave 6a (item 22): implementation subagent for `checkUrl` → thin
-dispatcher (`checkUrlScheme`, `checkIpLiteralHost`, `checkDomainHost` in
-domains.ts). After it reports: orchestrator verifies diff + re-runs gates →
-adversarial review subagent → fix subagent if findings → commit → ledger →
-wave 6b.
+Wave 6b: implementation subagent for `src/fetch.ts` (item 23) — `safeFetch`
+loop body → `fetchOneHop(url, signal)` + `resolveRedirectTarget(response,
+currentUrl)`. After it reports: orchestrator verifies diff + re-runs gates
+→ adversarial review subagent → fix subagent if findings → commit → ledger
+→ wave 6c.
