@@ -17,6 +17,8 @@
  */
 
 import net from "node:net";
+import type { WebSearchConfig } from "./config.ts";
+import type { SessionState } from "./session.ts";
 
 export interface DomainCheck {
 	allowed: boolean;
@@ -32,6 +34,20 @@ export interface AllowlistOptions {
 	blockPrivateNetworks?: boolean;
 	/** Hosts granted at runtime (e.g. user confirmed a fetch outside the list). */
 	grantedHosts?: ReadonlySet<string>;
+}
+
+/**
+ * Build the allowlist options from the effective config and the session's
+ * runtime grants. This is the single place the config + session state are
+ * combined into the shape `checkUrl` / `safeFetch` consume.
+ */
+export function buildAllowlistOptions(config: WebSearchConfig, session: SessionState): AllowlistOptions {
+	return {
+		allowedDomains: config.allowedDomains,
+		allowSubdomains: config.allowSubdomains,
+		blockPrivateNetworks: config.blockPrivateNetworks,
+		grantedHosts: session.grants,
+	};
 }
 
 /**

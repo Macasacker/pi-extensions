@@ -31,119 +31,43 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { Text, matchesKey } from "@earendil-works/pi-tui";
 
-import { checkUrl, diffAllowlists, type AllowlistOptions } from "./src/domains.ts";
+import { buildAllowlistOptions, checkUrl } from "./src/domains.ts";
 import {
 	loadConfig,
 	globalSettingsPath,
 	projectSettingsPath,
 	updateSettingsDomains,
 	sanitizeDomainEntry,
-	type WebSearchConfig,
 } from "./src/config.ts";
 import { extractReadableText, truncateText } from "./src/extract.ts";
 import { sanitizeForTui } from "./src/sanitize.ts";
 import { safeFetch, FetchBlockedError, FetchError, type SafeFetchResult } from "./src/fetch.ts";
-import { duckduckgoProvider } from "./src/providers/duckduckgo.ts";
-import { createBraveProvider, expandEnvRef } from "./src/providers/brave.ts";
-import type { SearchProvider, SearchResult } from "./src/providers/types.ts";
+import { expandEnvRef } from "./src/providers/brave.ts";
 import {
 	renderSearchCall,
 	renderSearchResult,
 	renderFetchCall,
 	renderFetchResult,
-	type SearchDetails,
 	type FetchDetails,
 } from "./src/render.ts";
-import { createSessionState, type SessionState } from "./src/session.ts";
-import { getTestProvider } from "./src/test-seam.ts";
+import {
+	checkAllowlistDrift,
+	createSessionState,
+	getProvider,
+	recordSessionCall,
+	type SessionState,
+	warnIfAllowlistEmpty,
+} from "./src/session.ts";
+import { logCall, type LogData } from "./src/log.ts";
+import { assertEnabled, prepareToolExecution } from "./src/tools/common.ts";
+import { executeWebSearch } from "./src/tools/search.ts";
 
 // The e2e suite imports this from index.ts — re-exported from the seam module.
 export { setTestProvider } from "./src/test-seam.ts";
 
 // ---------------------------------------------------------------------------
-// session state
-// ---------------------------------------------------------------------------
-
-interface LogData {
-	kind: "search" | "fetch" | "config";
-	target: string;
-	ok: boolean;
-	detail?: string;
-}
-
-// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-function getProvider(config: WebSearchConfig, session: SessionState, ctx?: ExtensionContext): SearchProvider {
-	const testProvider = getTestProvider();
-	if (testProvider) return testProvider;
-	if (config.provider === "brave") {
-		if (expandEnvRef(config.braveApiKey)) return createBraveProvider(config.braveApiKey);
-		if (ctx?.hasUI && !session.warnedBrave) {
-			session.warnedBrave = true;
-			ctx.ui.notify("web-search: Brave selected but no API key found — falling back to DuckDuckGo", "warning");
-		}
-		return duckduckgoProvider;
-	}
-	return duckduckgoProvider;
-}
-
-function buildAllowlistOptions(config: WebSearchConfig, session: SessionState): AllowlistOptions {
-	return {
-		allowedDomains: config.allowedDomains,
-		allowSubdomains: config.allowSubdomains,
-		blockPrivateNetworks: config.blockPrivateNetworks,
-		grantedHosts: session.grants,
-	};
-}
-
-function recordSessionCall(session: SessionState, ctx: ExtensionContext): void {
-	session.callCount += 1;
-	try {
-		ctx.ui.setStatus("web-search", `${session.callCount} web call(s) this session`);
-	} catch {
-		// status is cosmetic
-	}
-}
-
-function logCall(pi: ExtensionAPI, ctx: ExtensionContext, entry: LogData): void {
-	try {
-		// The target is LLM-supplied (query/URL) — sanitize before it is rendered
-		// from the session entry in the TUI.
-		const sanitizedEntry = { ...entry, target: sanitizeForTui(entry.target), detail: entry.detail ? sanitizeForTui(entry.detail) : undefined };
-		pi.appendEntry("web-search-log", { ...sanitizedEntry, ts: Date.now() });
-	} catch {
-		// logging must never break a tool call
-	}
-}
-
-/**
- * Detect out-of-band allowlist changes: the extension's own tools can never
- * modify the allowlist (only the user's /web-search-domains command can), but
- * the agent could edit settings.json with the built-in file tools. The
- * allowlist is the user's security boundary, so any change made outside the
- * command flow is surfaced as a warning + session log entry instead of being
- * applied silently.
- */
-function checkAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, config: WebSearchConfig, session: SessionState): void {
-	const current = [...config.allowedDomains].sort();
-	const diff = diffAllowlists(session.lastAllowlist, current);
-	if (diff && (diff.added.length > 0 || diff.removed.length > 0)) {
-		reportAllowlistDrift(pi, ctx, diff);
-	}
-	session.lastAllowlist = current;
-}
-
-/** Surface a detected allowlist change: user-visible warning + session log entry. */
-function reportAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, diff: { added: string[]; removed: string[] }): void {
-	const parts = ["web-search: allowlist changed during session"];
-	if (diff.added.length > 0) parts.push(`added: ${diff.added.join(", ")}`);
-	if (diff.removed.length > 0) parts.push(`removed: ${diff.removed.join(", ")}`);
-	parts.push("If you didn't make this change, check who edited your settings (an agent can edit settings.json with the built-in file tools).");
-	if (ctx.hasUI) ctx.ui.notify(parts.join(" — "), "warning");
-	logCall(pi, ctx, { kind: "config", target: "allowlist", ok: true, detail: `${diff.added.length} added, ${diff.removed.length} removed` });
-}
 
 /** Called by /web-search-domains after it writes settings, so user-initiated changes don't trigger the drift warning. */
 function noteAllowlistChange(ctx: ExtensionContext, session: SessionState): void {
@@ -151,19 +75,6 @@ function noteAllowlistChange(ctx: ExtensionContext, session: SessionState): void
 		session.lastAllowlist = [...loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false }).config.allowedDomains].sort();
 	} catch {
 		session.lastAllowlist = null;
-	}
-}
-
-function assertEnabled(config: WebSearchConfig): void {
-	if (!config.enabled) {
-		throw new Error("web-search is disabled (webSearch.enabled: false). Re-enable it in settings to use web_search/web_fetch.");
-	}
-}
-
-function warnIfAllowlistEmpty(config: WebSearchConfig, session: SessionState, ctx: ExtensionContext): void {
-	if (config.allowedDomains.length === 0 && !session.warnedEmptyAllowlist) {
-		session.warnedEmptyAllowlist = true;
-		if (ctx.hasUI) ctx.ui.notify("web-search: allowlist is empty — every fetch will be blocked. Use /web-search-domains to add domains.", "warning");
 	}
 }
 
@@ -225,61 +136,9 @@ export default function (pi: ExtensionAPI) {
 			max_results: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Max results to return (default from config, usually 8)" })),
 		}),
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			const loadedConfig = loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false });
-			const config = loadedConfig.config;
-			try {
-				assertEnabled(config);
-			} catch (error) {
-				logCall(pi, ctx, { kind: "search", target: params.query, ok: false, detail: "disabled (webSearch.enabled: false)" });
-				throw error;
-			}
-			warnIfAllowlistEmpty(config, session, ctx);
-			checkAllowlistDrift(pi, ctx, config, session);
-
+			const config = prepareToolExecution({ pi, ctx, session, preparation: { kind: "search", target: params.query } });
 			const provider = getProvider(config, session, ctx);
-			onUpdate?.({ content: [{ type: "text", text: `Searching: ${sanitizeForTui(params.query)}` }], details: {} });
-
-			let searchResults: SearchResult[];
-			try {
-				searchResults = await provider.search(params.query, params.max_results ?? config.maxResults, signal ?? new AbortController().signal);
-			} catch (error) {
-				logCall(pi, ctx, { kind: "search", target: params.query, ok: false, detail: String(error instanceof Error ? error.message : error) });
-				throw error;
-			}
-			if (signal?.aborted) {
-				logCall(pi, ctx, { kind: "search", target: params.query, ok: false, detail: "cancelled" });
-				return { content: [{ type: "text", text: "Cancelled" }], details: {} };
-			}
-
-			const allowlistOptions = buildAllowlistOptions(config, session);
-			const allowed: SearchDetails["results"] = [];
-			let hidden = 0;
-			for (const result of searchResults) {
-				const check = checkUrl(result.url, allowlistOptions);
-				if (check.allowed) allowed.push({ title: result.title, url: result.url, snippet: result.snippet, domain: check.host });
-				else hidden += 1;
-			}
-
-			let text: string;
-			if (allowed.length === 0) {
-				text =
-					`No results from allowed domains for: ${sanitizeForTui(params.query)}\n` +
-					`${hidden} result(s) hidden by the domain allowlist.\n` +
-					`Allowed domains: ${config.allowedDomains.join(", ") || "(none)"}\n` +
-					`Use /web-search-domains add <domain> to widen the allowlist.`;
-			} else {
-				text = allowed
-					.map((result, index) => `[${index + 1}] ${result.title}\n    ${result.url}\n    ${result.snippet}`)
-					.join("\n\n");
-				if (hidden > 0) text += `\n\n(${hidden} result(s) hidden: domain not in allowlist)`;
-			}
-
-			recordSessionCall(session, ctx);
-			logCall(pi, ctx, { kind: "search", target: params.query, ok: true, detail: `${allowed.length} allowed, ${hidden} hidden (provider: ${provider.id})` });
-			return {
-				content: [{ type: "text", text }],
-				details: { query: params.query, provider: provider.id, results: allowed, hiddenCount: hidden } satisfies SearchDetails,
-			};
+			return executeWebSearch(params, { config, session, provider, signal, ctx, pi, onUpdate });
 		},
 		renderCall: (args, theme) => renderSearchCall(args, theme),
 		renderResult: (result, options, theme) => renderSearchResult(result, options, theme),
