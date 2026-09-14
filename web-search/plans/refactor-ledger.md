@@ -1,8 +1,8 @@
 # Ledger: web-search code-design refactor
 
-Status: **PAUSED at the phase 5 boundary (user instruction, 2026-09-14).**
+Status: **IN PROGRESS — phases 5–7 being orchestrated (resumed 2026-09-14).**
 Phases 0–4 are committed (phase 4: `b9145a1` code, `e9e75aa` docs). Phases
-5–7 are approved but not started. Orchestrator: main session.
+5–7 are approved and now executing. Orchestrator: main session.
 Loop per phase (per AGENTS.md Orchestration Convention): one implementation
 subagent scoped to the phase (follows the `code-design` skill, runs the
 validation gates, no commits) → orchestrator verifies the diff and re-runs the
@@ -208,13 +208,77 @@ fix subagent before commit:
 Suite is now 106 tests; all gates re-run green after the fixes. Phase 4
 committed as `b9145a1` (code + tests) and `e9e75aa` (plan + ledger).
 
-## Next action (paused)
+## Phase 5 wave plan (items 16–21; per-wave loop: implement → verify+gates →
+## adversarial review → fix if needed → commit → ledger)
 
-Phase 5 (index.ts decomposition, items 16–21): per-file worklist for
-`src/tools/search.ts`, `src/tools/fetch.ts`, `src/commands/domains.ts`,
-`src/commands/status.ts`, shrunk index.ts (≤ ~150 lines); ends with full
-`npm test` + live `pi -p` smoke test. Smoke prerequisites verified at pause:
-`pi` binary at `/home/mac/.local/share/pi-node/node-v22.22.3-linux-x64/bin/pi`,
-extension registered in `~/.pi/agent/settings.json` (`webSearch.allowedDomains`
-non-empty). Awaiting the user's go-ahead before dispatching the first phase-5
-subagent.
+Phase 5 is broken into per-module waves (each wave keeps all gates green):
+
+1. [x] **5a — item 16**: `src/tools/search.ts` — `executeWebSearch(params, deps)`
+   (`deps` bundles `{ config, session, provider, signal, ctx, pi, onUpdate }`);
+   named steps `runProviderSearch`, `filterResultsByAllowlist`,
+   `formatSearchResults`. Shared helpers moved: `logCall`/`LogData` →
+   `src/log.ts`; `prepareToolExecution` (new shared pre-flight) +
+   `assertEnabled` → `src/tools/common.ts`; `getProvider`,
+   `recordSessionCall`, `warnIfAllowlistEmpty`, `checkAllowlistDrift`,
+   `reportAllowlistDrift` → `src/session.ts`; `buildAllowlistOptions` →
+   `src/domains.ts` (type-only `SessionState` import — no runtime cycle).
+   — done: committed `49a97e0`; gates green (106/106, tsc, lint); adversarial
+   review **Verdict: Ready** (helpers byte-identical, disabled-case ordering
+   pinned, surface intact). Optional carry-overs folded into 5b: (a) pin the
+   disabled-case log entry (`kind`/`detail`) with test assertions for both
+   tools; (b) add e2e coverage for web_search cancel (aborting signal) and
+   provider-error (throwing fake provider) paths.
+2. [ ] **5b — item 17**: `src/tools/fetch.ts` — `executeWebFetch(params, deps)`
+   with named steps `resolveFetchPermission`, `buildFetchOutput`,
+   `detectLowContent`, `saveFullTextToTempFile` (deps also carries
+   `toolCallId` for the temp-file name).
+3. [ ] **5c — item 18**: `src/commands/domains.ts` — `parseDomainCommandArgs`,
+   `applyDomainChange` (shared add/remove validation sequence, once),
+   `showDomainList` (+ `DismissableText` moves here); `src/commands/status.ts`
+   — `buildStatusReport(loadedConfig, session)`.
+4. [ ] **5d — items 19+20**: index.ts shrinks to registration only (events,
+   registerTool ×2 thin wrappers, registerCommand ×2, entry renderer; ≤ ~150
+   lines); test imports updated where paths moved (e2e keeps `../index.ts`).
+5. [ ] **5e — item 21**: gate — full `npm test` + live `pi -p` smoke test
+   (orchestrator runs: search + allowed fetch + blocked domain in
+   /tmp/websearch-smoke; pi binary at
+   /home/mac/.local/share/pi-node/node-v22.22.3-linux-x64/bin/pi, extension
+   registered in ~/.pi/agent/settings.json with non-empty allowedDomains).
+
+## Phase 6 wave plan (items 22–28)
+
+1. [ ] **6a — item 22**: `checkUrl` → thin dispatcher (`checkUrlScheme`,
+   `checkIpLiteralHost`, `checkDomainHost` in domains.ts).
+2. [ ] **6b — item 23**: `safeFetch` loop body → `fetchOneHop(url, signal)` +
+   `resolveRedirectTarget(response, currentUrl)` (fetch.ts).
+3. [ ] **6c — item 24**: providers → shared `fetchProviderResponse(url,
+   { signal, headers })` + `parseDuckDuckGoResults` / `parseBraveResults`.
+4. [ ] **6d — item 25**: `loadConfig` merge closure → named
+   `mergeSettingsFile(loaded, file)`; `configWarnings: string[]` in
+   `LoadedConfig` (malformed JSON, ignored keys) surfaced via one-time
+   `ctx.ui.notify` in the tool execute paths (F8 — the one intentional
+   behavior change in the refactor; needs new tests per add-unit-test).
+5. [ ] **6e — items 26+27**: cancelled check → `signal?.aborted` +
+   `err instanceof FetchError && err.message === "cancelled"` (no string
+   matching); hoist `PROVIDER_MAX_BODY_BYTES` to `providers/types.ts`.
+6. [ ] **6f — item 28**: gate — full `npm test` + live smoke + fresh
+   adversarial review pass (bypass matrix re-verified).
+
+## Phase 7 wave plan (items 29–31)
+
+1. [ ] **7a — items 29+30**: drop `// ---- section ----` banners (keep
+   file-header doc comments); add "why" comments on intentional swallows
+   (best-effort `body.cancel()`, `noteAllowlistChange` reset-on-unreadable).
+2. [ ] **7b — item 31**: final `npm test` + live smoke; README touch-ups only
+   if a renamed public symbol is documented (none expected).
+
+## Next action
+
+Wave 5b: implementation subagent for `src/tools/fetch.ts` (item 17) —
+`executeWebFetch(params, deps)` with `resolveFetchPermission`,
+`buildFetchOutput`, `detectLowContent`, `saveFullTextToTempFile`; adopts
+`prepareToolExecution` (removing the transitional inline pre-flight);
+plus the two 5a review carry-overs (disabled-log-entry assertions, search
+cancel/provider-error e2e coverage). After it reports: orchestrator
+verifies diff + re-runs gates → adversarial review subagent → fix subagent
+if findings → commit → ledger → wave 5c.

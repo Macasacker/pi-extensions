@@ -1,8 +1,8 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: PAUSED at the phase 5 boundary** (user instruction, 2026-09-14).
-> Phases 0–4 are committed (see git log). Phases 5–7 below are approved but
-> not started. See `plans/refactor-ledger.md` for the full state.
+> **STATUS: IN PROGRESS — phase 5 executing (resumed 2026-09-14; wave 5a done, `49a97e0`).**
+> Phases 0–4 are committed (see git log). Phases 5–7 are approved and executing.
+> See `plans/refactor-ledger.md` for the full state.
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
 `code-design` skill (SRP, variable design, function design, purity, control flow,
@@ -257,9 +257,13 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
 
 ### Phase 5 — Decompose index.ts (the structural fix)
 
-- [ ] 16. `src/tools/search.ts`: `executeWebSearch(params, deps)` where `deps` bundles
-    `{ config, session, provider, signal, ctx, pi }`; internal named steps
+- [x] 16. `src/tools/search.ts`: `executeWebSearch(params, deps)` where `deps` bundles
+    `{ config, session, provider, signal, ctx, pi }` (+ `onUpdate`); internal named steps
     `runProviderSearch`, `filterResultsByAllowlist`, `formatSearchResults`.
+    **Deviation (additions):** shared pre-flight extracted as `prepareToolExecution`
+    (`src/tools/common.ts`) so both tools share it; `logCall`/`LogData` moved to
+    `src/log.ts`; session-state helpers moved to `src/session.ts`;
+    `buildAllowlistOptions` to `src/domains.ts` (wave 5a, committed `49a97e0`).
 - [ ] 17. `src/tools/fetch.ts`: `executeWebFetch(params, deps)` with named steps
     `resolveFetchPermission` (allowlist check + confirm + grant bookkeeping),
     `buildFetchOutput` (banner + truncation + temp file + redirect + low-content
