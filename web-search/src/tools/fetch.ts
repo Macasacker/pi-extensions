@@ -199,7 +199,7 @@ function handleFetchFailure(error: unknown, params: WebFetchParams, deps: WebFet
 		throw error;
 	}
 	const errorMessage = error instanceof Error ? error.message : String(error);
-	if (signal?.aborted || errorMessage === "cancelled" || errorMessage.includes("cancelled")) {
+	if (signal?.aborted || (error instanceof FetchError && error.message === "cancelled")) {
 		logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: "cancelled" });
 		return { content: [{ type: "text", text: "Cancelled" }], details: {} };
 	}

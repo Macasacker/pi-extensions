@@ -14,10 +14,10 @@ import { parse } from "node-html-parser";
 import { readCappedText } from "../fetch.ts";
 import { sanitizeForTui } from "../sanitize.ts";
 import { fetchProviderResponse } from "./common.ts";
+import { PROVIDER_MAX_BODY_BYTES } from "./types.ts";
 import type { SearchProvider, SearchResult } from "./types.ts";
 
 const ENDPOINT = "https://html.duckduckgo.com/html/";
-const MAX_BODY_BYTES = 1024 * 1024; // provider responses are capped like web_fetch bodies
 
 function decodeDdgHref(href: string): string | null {
 	if (!href) return null;
@@ -81,7 +81,7 @@ export function createDuckDuckGoProvider(options?: { fetchImpl?: typeof fetch })
 				throw new Error(`DuckDuckGo returned HTTP ${response.status}. Consider configuring the Brave provider (webSearch.provider: "brave" + braveApiKey).`);
 			}
 
-			const html = await readCappedText(response, MAX_BODY_BYTES);
+			const html = await readCappedText(response, PROVIDER_MAX_BODY_BYTES);
 			if (CHALLENGE_MARKERS.some((challengeMarker) => html.toLowerCase().includes(challengeMarker)) && !html.includes("result__a")) {
 				throw new Error(
 					"DuckDuckGo served a challenge page (likely rate limiting or datacenter IP). " +

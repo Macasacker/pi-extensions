@@ -9,10 +9,10 @@
 import { readCappedText } from "../fetch.ts";
 import { sanitizeForTui } from "../sanitize.ts";
 import { fetchProviderResponse } from "./common.ts";
+import { PROVIDER_MAX_BODY_BYTES } from "./types.ts";
 import type { SearchProvider, SearchResult } from "./types.ts";
 
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
-const MAX_BODY_BYTES = 1024 * 1024;
 
 export function expandEnvRef(value: string): string {
 	if (value.startsWith("$")) {
@@ -75,7 +75,7 @@ export function createBraveProvider(apiKey: string, options?: { fetchImpl?: type
 				throw new Error(`Brave API returned HTTP ${response.status}.`);
 			}
 
-			const data = (await readCappedText(response, MAX_BODY_BYTES).then((responseBody) => JSON.parse(responseBody))) as BraveWebSearchResponse;
+			const data = (await readCappedText(response, PROVIDER_MAX_BODY_BYTES).then((responseBody) => JSON.parse(responseBody))) as BraveWebSearchResponse;
 			return parseBraveResults(data, limit);
 		},
 	};

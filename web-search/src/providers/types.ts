@@ -1,5 +1,8 @@
 /** Search provider contract. */
 
+/** Provider responses are capped like web_fetch bodies. */
+export const PROVIDER_MAX_BODY_BYTES = 1024 * 1024;
+
 export interface SearchResult {
 	title: string;
 	url: string;
