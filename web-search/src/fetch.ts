@@ -78,6 +78,7 @@ export async function readBodyCapped(response: Response, maxBytes: number): Prom
 			chunks.push(value);
 			if (total > maxBytes) {
 				truncated = true;
+				// Best-effort: cancel the stream once we've read enough; a cancel failure is not actionable here.
 				await reader.cancel().catch(() => {});
 				break;
 			}
@@ -184,6 +185,7 @@ export async function safeFetch(url: string, options: SafeFetchOptions): Promise
 		}
 
 		if (response.status >= 400) {
+			// Best-effort: release the body on the error path; a cancel failure is not actionable here.
 			response.body?.cancel().catch(() => {});
 			throw new FetchError(current, `HTTP ${response.status}`, response.status);
 		}

@@ -122,6 +122,9 @@ function noteAllowlistChange(ctx: ExtensionContext, session: SessionState): void
 	try {
 		session.lastAllowlist = [...loadConfig({ cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted?.() ?? false }).config.allowedDomains].sort();
 	} catch {
+		// Unreadable settings: reset the drift baseline so the next tool call
+		// re-establishes it; diffAllowlists(null, …) reports no diff, so a
+		// transient read failure produces no spurious drift warning.
 		session.lastAllowlist = null;
 	}
 }

@@ -41,10 +41,6 @@ import { executeWebFetch } from "./src/tools/fetch.ts";
 // The e2e suite imports this from index.ts — re-exported from the seam module.
 export { setTestProvider } from "./src/test-seam.ts";
 
-// ---------------------------------------------------------------------------
-// extension
-// ---------------------------------------------------------------------------
-
 export default function (pi: ExtensionAPI) {
 	let session = createSessionState();
 
@@ -60,7 +56,7 @@ export default function (pi: ExtensionAPI) {
 		session = createSessionState();
 	});
 
-	// -- web_search ----------------------------------------------------------
+	// web_search
 
 	pi.registerTool({
 		name: "web_search",
@@ -85,7 +81,7 @@ export default function (pi: ExtensionAPI) {
 		renderResult: (result, options, theme) => renderSearchResult(result, options, theme),
 	});
 
-	// -- web_fetch -----------------------------------------------------------
+	// web_fetch
 
 	pi.registerTool({
 		name: "web_fetch",
@@ -109,7 +105,7 @@ export default function (pi: ExtensionAPI) {
 		renderResult: (result, options, theme) => renderFetchResult(result, options, theme),
 	});
 
-	// -- /web-search-domains ---------------------------------------------------
+	// /web-search-domains
 
 	pi.registerCommand("web-search-domains", {
 		description: "Show the web-search domain allowlist; add/remove domains (add <domain> [--project], remove <domain> [--project])",
@@ -126,7 +122,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// -- /web-search-status ----------------------------------------------------
+	// /web-search-status
 
 	pi.registerCommand("web-search-status", {
 		description: "Show web-search configuration and session usage",
@@ -136,7 +132,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// -- session log entry rendering -------------------------------------------
+	// session log entry rendering
 
 	pi.registerEntryRenderer("web-search-log", (entry, { expanded }, theme) => {
 		const details = entry.data as LogData & { ts?: number };
