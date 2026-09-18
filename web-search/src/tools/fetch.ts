@@ -199,7 +199,11 @@ function handleFetchFailure(error: unknown, params: WebFetchParams, deps: WebFet
 		throw error;
 	}
 	const errorMessage = error instanceof Error ? error.message : String(error);
-	if (signal?.aborted || (error instanceof FetchError && error.message === "cancelled")) {
+	// The caller's signal is the authoritative cancel signal: it is the same
+	// reference fetchOneHop checks (and maps a caller-abort to a FetchError),
+	// and AbortSignal.aborted is monotonic. A timeout does not abort the
+	// caller's signal, so it correctly falls through to the final throw.
+	if (signal?.aborted) {
 		logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: "cancelled" });
 		return { content: [{ type: "text", text: "Cancelled" }], details: {} };
 	}
