@@ -8,6 +8,7 @@
 
 import { readCappedText } from "../fetch.ts";
 import { sanitizeForTui } from "../sanitize.ts";
+import { fetchProviderResponse } from "./common.ts";
 import type { SearchProvider, SearchResult } from "./types.ts";
 
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
@@ -19,6 +20,24 @@ export function expandEnvRef(value: string): string {
 		return process.env[name] ?? "";
 	}
 	return value;
+}
+
+interface BraveWebSearchResponse {
+	web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
+}
+
+function parseBraveResults(data: BraveWebSearchResponse, limit: number): SearchResult[] {
+	const results: SearchResult[] = [];
+	for (const result of data.web?.results ?? []) {
+		if (!result.url) continue;
+		results.push({
+			title: sanitizeForTui(result.title ?? result.url),
+			url: result.url,
+			snippet: sanitizeForTui(result.description ?? ""),
+		});
+		if (results.length >= limit) break;
+	}
+	return results;
 }
 
 export function createBraveProvider(apiKey: string, options?: { fetchImpl?: typeof fetch }): SearchProvider {
@@ -35,21 +54,16 @@ export function createBraveProvider(apiKey: string, options?: { fetchImpl?: type
 
 			const url = `${ENDPOINT}?q=${encodeURIComponent(query)}&count=${Math.min(limit, 20)}&search_lang=en`;
 
-			let response: Response;
-			try {
-				response = await doFetch(url, {
-					method: "GET",
-					signal,
-					headers: {
-						Accept: "application/json",
-						"Accept-Encoding": "identity",
-						"X-Subscription-Token": key,
-					},
-				});
-			} catch (error) {
-				if (signal.aborted) throw new Error("Search cancelled");
-				throw new Error(`Brave request failed: ${error instanceof Error ? error.message : String(error)}`);
-			}
+			const response = await fetchProviderResponse(url, {
+				doFetch,
+				signal,
+				headers: {
+					Accept: "application/json",
+					"Accept-Encoding": "identity",
+					"X-Subscription-Token": key,
+				},
+				providerName: "Brave",
+			});
 
 			if (response.status === 401 || response.status === 403) {
 				throw new Error(`Brave API rejected the key (HTTP ${response.status}). Check webSearch.braveApiKey.`);
@@ -61,20 +75,8 @@ export function createBraveProvider(apiKey: string, options?: { fetchImpl?: type
 				throw new Error(`Brave API returned HTTP ${response.status}.`);
 			}
 
-			const data = (await readCappedText(response, MAX_BODY_BYTES).then((responseBody) => JSON.parse(responseBody))) as {
-				web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-			};
-			const results: SearchResult[] = [];
-			for (const result of data.web?.results ?? []) {
-				if (!result.url) continue;
-				results.push({
-					title: sanitizeForTui(result.title ?? result.url),
-					url: result.url,
-					snippet: sanitizeForTui(result.description ?? ""),
-				});
-				if (results.length >= limit) break;
-			}
-			return results;
+			const data = (await readCappedText(response, MAX_BODY_BYTES).then((responseBody) => JSON.parse(responseBody))) as BraveWebSearchResponse;
+			return parseBraveResults(data, limit);
 		},
 	};
 }
