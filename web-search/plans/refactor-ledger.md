@@ -361,12 +361,26 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
    F8's intent — kept). Optional note folded into 6d-notify: reword the
    "not valid JSON" message for valid-JSON top-level non-objects (e.g.
    `[1,2,3]`) while shaping it for display.
-5. [ ] **6d-notify — item 25 (part 2, session.ts + tools/common.ts)**:
+5. [x] **6d-notify — item 25 (part 2, session.ts + tools/common.ts + config.ts)**:
    one-shot `warnedConfig` flag on `SessionState` (+ `createSessionState`),
-   a `warnIfConfigWarnings(pi, ctx, configWarnings, session)` helper, called
-   in `prepareToolExecution` so the warnings surface once per session via
-   `ctx.ui.notify`. New e2e test (warns once, not twice; resets on session
-   reset).
+   `warnIfConfigWarnings(ctx, configWarnings, session)` helper in session.ts
+   (notify-only, joined with `\n`, flag set before the `ctx.hasUI` check —
+   matches the `warnIfAllowlistEmpty` pre-flight sibling), called in
+   `prepareToolExecution` after `assertEnabled` and before
+   `warnIfAllowlistEmpty` (both tools' pre-flight; a disabled extension
+   short-circuits before it). Also reworded the malformed message to be
+   accurate now that it is user-visible: `readSettingsJson`'s `malformed`
+   status carries `reason: "invalid-json" | "not-an-object"`, so a valid-JSON
+   top-level non-object reads `is not a JSON object` (the `invalid-json`
+   message is unchanged). — done: committed `2a99b80`; gates green (149/149,
+   tsc, lint; verified in an isolated worktree with only its 5 files);
+   adversarial review **Verdict: Ready** (one-shot dedupe/reset, disabled
+   short-circuit, malformed classification, updateSettingsDomains
+   reason-independence, frozen surface all verified). Optional notes:
+   `mergeSettingsFile` now 41 lines (edge of the ~40 guideline); pre-existing
+   one-shot flag pattern split (`warnedBrave` is the odd one out, not this
+   wave). 6f gate should confirm the one-time notify renders in a real TUI
+   smoke (multi-line `\n` join untested against real TUI wrapping).
 6. [ ] **6e — items 26+27**: cancelled check → `signal?.aborted` +
    `err instanceof FetchError && err.message === "cancelled"` (no string
    matching); hoist `PROVIDER_MAX_BODY_BYTES` to `providers/types.ts`.
@@ -383,12 +397,8 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Next action
 
-Wave 6d-notify: implementation subagent for `src/session.ts` +
-`src/tools/common.ts` (item 25 part 2) — one-shot `warnedConfig` flag on
-`SessionState` (+ `createSessionState`), `warnIfConfigWarnings(ctx,
-configWarnings, session)` helper in session.ts, called in
-`prepareToolExecution` after `assertEnabled`; reword the "not valid JSON"
-message for valid-JSON top-level non-objects (folded 6d optional note). New
-e2e test (warns once, not twice; resets on session reset). After it reports:
-orchestrator verifies diff + re-runs gates → adversarial review subagent →
-fix subagent if findings → commit → ledger → wave 6e.
+Wave 6e review is in flight (commit `73730a4`, base `2a99b80`). On its Ready
+verdict: update the ledger for 6e → dispatch wave 6f (item 28 gate: full
+`npm test` + live `pi -p` smoke + fresh adversarial review pass, bypass
+matrix re-verified; also confirm the one-time config-warning notify renders
+in a real TUI smoke). One agent at a time.

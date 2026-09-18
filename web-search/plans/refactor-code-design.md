@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887` done; item 25 part 2 = 6d-notify next).**
+> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887`, 6d-notify `2a99b80`, 6e `73730a4` done; item 25 complete; 6f gate next).**
 > Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -326,7 +326,8 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     on a `ConfigLoadState` bag + `applyWebSearchSettings`; `configWarnings`
     collection; `readSettingsJson` discriminated union) — wave 6d, committed
     `2d45887`. Part 2 (one-time `ctx.ui.notify` surfacing via a one-shot
-    `warnedConfig` flag in `prepareToolExecution`) — wave 6d-notify.
+    `warnedConfig` flag in `prepareToolExecution`) — wave 6d-notify, committed
+    `2a99b80`. Item 25 complete.
 - [ ] 26. Replace the string-matched cancelled check (index.ts:352) with
     `signal?.aborted` + `err instanceof FetchError && err.message ===
     "cancelled"` — `safeFetch` already throws a distinct `FetchError(current,
