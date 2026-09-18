@@ -331,17 +331,40 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
    review **Verdict: Ready** — no findings of any severity (path-by-path
    control-flow comparison vs pre-wave; targeted 12/12 fetch-suite run;
    export surface frozen).
-3. [ ] **6c — item 24**: providers → shared `fetchProviderResponse(url,
-   { signal, headers })` + `parseDuckDuckGoResults` / `parseBraveResults`.
-4. [ ] **6d — item 25**: `loadConfig` merge closure → named
-   `mergeSettingsFile(loaded, file)`; `configWarnings: string[]` in
-   `LoadedConfig` (malformed JSON, ignored keys) surfaced via one-time
-   `ctx.ui.notify` in the tool execute paths (F8 — the one intentional
-   behavior change in the refactor; needs new tests per add-unit-test).
-5. [ ] **6e — items 26+27**: cancelled check → `signal?.aborted` +
+3. [x] **6c — item 24**: providers → shared `fetchProviderResponse(url,
+   { doFetch, signal, headers, providerName })` in new `src/providers/
+   common.ts` (fetch + cancel-check + request-failed mapping; providerName
+   parameterizes the message; NO `redirect` option — default follow
+   preserved) + `parseDuckDuckGoResults(html, limit)` /
+   `parseBraveResults(data, limit)` (module-private, verbatim moves; Brave's
+   inline `as {…}` cast became the named `BraveWebSearchResponse` interface).
+   Provider-specific status checks (DDG `!ok`; Brave 401/403/429/`!ok`
+   ladder), the DDG challenge check, and the Brave no-key pre-check stayed
+   inline, byte-identical. — done: committed `f35748c`; gates green
+   (140/140, tsc, lint); adversarial review **Verdict: Ready** (mechanical
+   byte-identity of the shared preamble vs both original catch blocks;
+   parse moves verbatim; frozen surface intact). Pre-existing coverage gaps
+   confirmed unchanged (incl. the Brave 429 gap — ledger carry-over).
+4. [ ] **6d — item 25 (part 1, config.ts only)**: `loadConfig`'s `merge`
+   closure → named `mergeSettingsFile(loaded, file)` operating on an explicit
+   accumulator; `configWarnings: string[]` added to `LoadedConfig`; warnings
+   collected for (a) malformed JSON (file present but unparseable), (b) a
+   non-object `webSearch` key, (c) unknown/ignored `webSearch` keys (a
+   `KNOWN_WEBSEARCH_KEYS` set as the single source of truth). `readSettingsJson`
+   must distinguish "file missing" (no warning) from "file present but
+   malformed" (warning). New `config.test.mjs` tests. This is the first half
+   of the one intentional behavior change in the refactor (F8) — the second
+   half (surfacing) is 6d-notify.
+5. [ ] **6d-notify — item 25 (part 2, session.ts + tools/common.ts)**:
+   one-shot `warnedConfig` flag on `SessionState` (+ `createSessionState`),
+   a `warnIfConfigWarnings(pi, ctx, configWarnings, session)` helper, called
+   in `prepareToolExecution` so the warnings surface once per session via
+   `ctx.ui.notify`. New e2e test (warns once, not twice; resets on session
+   reset).
+6. [ ] **6e — items 26+27**: cancelled check → `signal?.aborted` +
    `err instanceof FetchError && err.message === "cancelled"` (no string
    matching); hoist `PROVIDER_MAX_BODY_BYTES` to `providers/types.ts`.
-6. [ ] **6f — item 28**: gate — full `npm test` + live smoke + fresh
+7. [ ] **6f — item 28**: gate — full `npm test` + live smoke + fresh
    adversarial review pass (bypass matrix re-verified).
 
 ## Phase 7 wave plan (items 29–31)
@@ -354,12 +377,10 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Next action
 
-Wave 6c: implementation subagent for the providers (item 24) — shared
-`fetchProviderResponse(url, { signal, headers })` (fetch + cancel-check +
-status errors) and `parseDuckDuckGoResults` / `parseBraveResults`
-(providers/). The status-code checks stay provider-specific (DDG's single
-`!response.ok` branch vs Brave's 401/403/429 ladder — different frozen
-messages); the shared preamble is fetch + cancel-check + request-failed
-mapping (provider name parameterized for the error message). After it
-reports: orchestrator verifies diff + re-runs gates → adversarial review
-subagent → fix subagent if findings → commit → ledger → wave 6d.
+Wave 6d: implementation subagent for `src/config.ts` (item 25 part 1) —
+`mergeSettingsFile(loaded, file)` + `configWarnings` collection (malformed
+JSON, non-object webSearch, ignored keys; KNOWN_WEBSEARCH_KEYS set;
+readSettingsJson distinguishes missing vs malformed). New config tests.
+After it reports: orchestrator verifies diff + re-runs gates → adversarial
+review subagent → fix subagent if findings → commit → ledger → wave
+6d-notify.

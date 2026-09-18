@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1` done).**
+> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c` done; item 25 split into 6d + 6d-notify).**
 > Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -309,9 +309,15 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     **Deviation:** `fetchOneHop(url, deps)` with a deps bag
     (`{ doFetch, callerSignal, timeoutMs }`) per the code-design ≤2-args
     rule; both helpers module-private. Wave 6b, committed `359e1c1`.
-- [ ] 24. Providers → shared `fetchProviderResponse(url, { signal, headers })`
+- [x] 24. Providers → shared `fetchProviderResponse(url, { signal, headers })`
     (fetch + cancel-check + status errors) and `parseDuckDuckGoResults` /
     `parseBraveResults` (providers/).
+    **Deviations:** `fetchProviderResponse(url, deps)` with a deps bag
+    (`{ doFetch, signal, headers, providerName }`) in a new
+    `src/providers/common.ts`; provider-specific status checks (DDG `!ok`;
+    Brave 401/403/429/`!ok` ladder) + the DDG challenge check + the Brave
+    no-key pre-check stay inline (different frozen messages); `BraveWebSearchResponse`
+    named interface replaces the inline cast. Wave 6c, committed `f35748c`.
 - [ ] 25. `loadConfig`'s `merge` closure → named `mergeSettingsFile(loaded, file)`
     operating on explicit values; collect `configWarnings: string[]` in
     `LoadedConfig` (malformed JSON, ignored keys) and surface them via a
