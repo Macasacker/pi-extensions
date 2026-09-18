@@ -12,7 +12,8 @@
  *
  * This module also holds the session-state helpers that read or write that
  * object: provider selection (one-shot Brave warning), the call counter,
- * the empty-allowlist warning, and allowlist-drift detection/reporting.
+ * the empty-allowlist warning, the config-warning surfacing, and
+ * allowlist-drift detection/reporting.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -33,6 +34,8 @@ export interface SessionState {
 	warnedBrave: boolean;
 	/** One-shot: allowlist is empty. */
 	warnedEmptyAllowlist: boolean;
+	/** One-shot: config load warnings surfaced. */
+	warnedConfig: boolean;
 	/** Effective allowlist as seen by the last tool call (drift detection). */
 	lastAllowlist: string[] | null;
 }
@@ -43,6 +46,7 @@ export function createSessionState(): SessionState {
 		callCount: 0,
 		warnedBrave: false,
 		warnedEmptyAllowlist: false,
+		warnedConfig: false,
 		lastAllowlist: null,
 	};
 }
@@ -81,6 +85,14 @@ export function warnIfAllowlistEmpty(config: WebSearchConfig, session: SessionSt
 	if (config.allowedDomains.length === 0 && !session.warnedEmptyAllowlist) {
 		session.warnedEmptyAllowlist = true;
 		if (ctx.hasUI) ctx.ui.notify("web-search: allowlist is empty — every fetch will be blocked. Use /web-search-domains to add domains.", "warning");
+	}
+}
+
+/** Surface config-load warnings once per session. */
+export function warnIfConfigWarnings(ctx: ExtensionContext, configWarnings: string[], session: SessionState): void {
+	if (configWarnings.length > 0 && !session.warnedConfig) {
+		session.warnedConfig = true;
+		if (ctx.hasUI) ctx.ui.notify(configWarnings.join("\n"), "warning");
 	}
 }
 

@@ -128,6 +128,23 @@ await test("should warn when the global settings file is malformed JSON", () => 
 	}
 });
 
+await test("should warn that the file is not a JSON object when the settings file is valid JSON with a non-object top level", () => {
+	const environment = makeEnvironment();
+	const globalSettingsFile = path.join(environment.home, ".pi", "agent", "settings.json");
+	try {
+		fs.writeFileSync(globalSettingsFile, "[1, 2, 3]");
+
+		const { configWarnings } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
+
+		assert.equal(configWarnings.length, 1);
+		assert.ok(configWarnings[0].includes(globalSettingsFile), "warning names the file");
+		assert.ok(configWarnings[0].includes("is not a JSON object"), "warning uses the accurate not-an-object wording");
+		assert.ok(!configWarnings[0].includes("is not valid JSON"), "warning must not claim the JSON is invalid");
+	} finally {
+		environment.cleanup();
+	}
+});
+
 await test("should warn when the webSearch key is not an object", () => {
 	const environment = makeEnvironment();
 	const globalSettingsFile = path.join(environment.home, ".pi", "agent", "settings.json");

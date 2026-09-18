@@ -530,6 +530,54 @@ await test("disabled config blocks both tools and logs the disabled entry for ea
 	assert.equal(searchLogEntry.data.detail, "disabled (webSearch.enabled: false)");
 });
 
+await test("should surface config warnings once per session when the settings file has a problem", async () => {
+	// sneaky.example and cmdadded.example are in the allowlist of the previous
+	// tests, so keeping them here avoids an unrelated drift warning in the
+	// notification assertions.
+	writeGlobalConfig({ webSearch: { useBuiltins: false, allowedDomains: ["127.0.0.1", "sneaky.example", "cmdadded.example"], blockPrivateNetworks: false, bogusKey: 1 } });
+	setTestProvider({
+		id: "fake",
+		search: async () => [{ title: "Allowed Doc", url: `http://127.0.0.1:${port}/doc`, snippet: "allowed snippet" }],
+	});
+	const notificationsBefore = notifications.length;
+
+	await tools.web_search.execute("tc50", { query: "test query" }, signal, undefined, mockContext);
+	const firstSearchNotifications = notifications.slice(notificationsBefore);
+
+	assert.equal(firstSearchNotifications.length, 1, "exactly one notification on the first call");
+	assert.ok(firstSearchNotifications[0].startsWith("warning:"), "the config warning is a warning notification");
+	assert.ok(firstSearchNotifications[0].includes("unknown webSearch key"), "the warning names the unknown-key problem");
+	assert.ok(firstSearchNotifications[0].includes("bogusKey"), "the warning lists the unknown key");
+
+	const notificationsBeforeSecond = notifications.length;
+
+	await tools.web_search.execute("tc51", { query: "test query" }, signal, undefined, mockContext);
+	const secondSearchNotifications = notifications.slice(notificationsBeforeSecond);
+
+	assert.equal(secondSearchNotifications.length, 0, "the one-shot flag suppresses the repeat in the same session");
+	setTestProvider(undefined);
+});
+
+await test("should re-surface config warnings when a fresh session starts after session_shutdown", async () => {
+	// The settings file from the previous test still carries the unknown key,
+	// and the one-shot flag was set in that session.
+	setTestProvider({
+		id: "fake",
+		search: async () => [{ title: "Allowed Doc", url: `http://127.0.0.1:${port}/doc`, snippet: "allowed snippet" }],
+	});
+
+	for (const handler of sessionEventHandlers["session_shutdown"]) handler();
+
+	const notificationsBefore = notifications.length;
+	await tools.web_search.execute("tc52", { query: "test query" }, signal, undefined, mockContext);
+	const freshSessionNotifications = notifications.slice(notificationsBefore);
+
+	assert.equal(freshSessionNotifications.length, 1, "the config warning re-surfaces in a fresh session");
+	assert.ok(freshSessionNotifications[0].startsWith("warning:"), "the re-surfaced warning is a warning notification");
+	assert.ok(freshSessionNotifications[0].includes("unknown webSearch key"), "the re-surfaced warning names the unknown-key problem");
+	setTestProvider(undefined);
+});
+
 server.close();
 process.env.HOME = savedHome;
 fs.rmSync(root, { recursive: true, force: true });

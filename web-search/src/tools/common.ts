@@ -4,15 +4,16 @@
  * Both tools run the same sequence before their own logic: load the
  * effective config, refuse to run when the extension is disabled (logging
  * the disabled entry and re-throwing the same error so the caller sees the
- * original message), warn once when the allowlist is empty, and surface
- * out-of-band allowlist changes. Keeping the sequence in one place means the
- * two tools can never drift apart on the safety guards.
+ * original message), surface config-load warnings once, warn once when the
+ * allowlist is empty, and surface out-of-band allowlist changes. Keeping the
+ * sequence in one place means the two tools can never drift apart on the
+ * safety guards.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig, type WebSearchConfig } from "../config.ts";
 import { logCall } from "../log.ts";
-import { checkAllowlistDrift, warnIfAllowlistEmpty, type SessionState } from "../session.ts";
+import { checkAllowlistDrift, warnIfAllowlistEmpty, warnIfConfigWarnings, type SessionState } from "../session.ts";
 
 /** Throw when the extension is disabled in settings. */
 export function assertEnabled(config: WebSearchConfig): void {
@@ -49,6 +50,7 @@ export function prepareToolExecution({ pi, ctx, session, preparation }: ToolPrep
 		logCall(pi, ctx, { kind: preparation.kind, target: preparation.target, ok: false, detail: "disabled (webSearch.enabled: false)" });
 		throw error;
 	}
+	warnIfConfigWarnings(ctx, loadedConfig.configWarnings, session);
 	warnIfAllowlistEmpty(config, session, ctx);
 	checkAllowlistDrift(pi, ctx, config, session);
 	return config;

@@ -129,7 +129,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 type SettingsFileReadResult =
 	| { status: "missing" }
-	| { status: "malformed" }
+	| { status: "malformed", reason: "invalid-json" | "not-an-object" }
 	| { status: "ok", settings: Record<string, unknown> };
 
 function readSettingsJson(file: string): SettingsFileReadResult {
@@ -139,13 +139,14 @@ function readSettingsJson(file: string): SettingsFileReadResult {
 	} catch {
 		return { status: "missing" }; // absent or unreadable — the normal case
 	}
+	let parsed: unknown;
 	try {
-		const parsed = JSON.parse(fileContents);
-		if (isPlainObject(parsed)) return { status: "ok", settings: parsed };
+		parsed = JSON.parse(fileContents);
 	} catch {
-		// fall through: the file exists but is not usable
+		return { status: "malformed", reason: "invalid-json" };
 	}
-	return { status: "malformed" };
+	if (!isPlainObject(parsed)) return { status: "malformed", reason: "not-an-object" };
+	return { status: "ok", settings: parsed };
 }
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -210,7 +211,11 @@ function mergeSettingsFile(state: ConfigLoadState, file: string): void {
 	const readResult = readSettingsJson(file);
 	if (readResult.status === "missing") return;
 	if (readResult.status === "malformed") {
-		state.configWarnings.push(`web-search: ${file} is not valid JSON — its webSearch settings are being ignored.`);
+		const warningMessage =
+			readResult.reason === "not-an-object"
+				? `web-search: ${file} is not a JSON object — its webSearch settings are being ignored.`
+				: `web-search: ${file} is not valid JSON — its webSearch settings are being ignored.`;
+		state.configWarnings.push(warningMessage);
 		return;
 	}
 	const webSearchSection = readResult.settings.webSearch;
