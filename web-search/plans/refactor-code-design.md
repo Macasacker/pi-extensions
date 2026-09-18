@@ -1,8 +1,9 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 7 executing (7a `6776e79` done; 7b final gate next).**
-> Phases 0–6 are committed (see git log). Phase 7 is the final phase.
-> See `plans/refactor-ledger.md` for the full state.
+> **STATUS: COMPLETE — all phases (0–7) committed and gated; all 31 items done.**
+> Final state: 149/149 tests, tsc clean, lint clean; live smoke green; frozen
+> public surface byte-identical; behavior-preserving modulo the single
+> intentional F8 change. See `plans/refactor-ledger.md` for the full history.
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
 `code-design` skill (SRP, variable design, function design, purity, control flow,
@@ -363,9 +364,12 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     **Done:** wave 7a `6776e79` — why-comments on the `readBodyCapped`
     truncation site, the `safeFetch` ≥400 site, and the `noteAllowlistChange`
     catch (the `resolveRedirectTarget` 3xx drain already had one).
-- [ ] 31. Final `npm test`, live smoke, README touch-ups only if a renamed public
+- [x] 31. Final `npm test`, live smoke, README touch-ups only if a renamed public
     symbol is documented there (none expected — the public surface is tools,
     commands, and the `webSearch` settings key, all unchanged).
+    **Done:** wave 7b — 149/149 + tsc + lint; live smoke green (search, allowed
+    fetch, blocked fetch, `/web-search-domains` round-trip); README accurate
+    as-is (no renamed public symbol → no changes). **Refactor complete.**
 
 ## Definition of done
 

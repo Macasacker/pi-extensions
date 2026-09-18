@@ -431,16 +431,19 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
    adversarial review **Verdict: Ready** (mechanically verified comment-only —
    zero non-comment lines changed; security-model header byte-identical; all
    four "why" comments accurate; no banners remain; frozen surface intact).
-2. [ ] **7b — item 31**: final gate — full `npm test` + tsc + lint + live
+2. [x] **7b — item 31**: final gate — full `npm test` + tsc + lint + live
    `pi -p` smoke (search, allowed fetch, blocked fetch, `/web-search-domains`
-   round-trip per the Definition of Done) + README check (no renamed public
-   symbol documented → no README changes expected).
+   round-trip per the Definition of Done) + README check. — done: **149/149,
+   tsc, lint clean**; all 4 live smoke scenarios PASS (search allowlist
+   filtering; allowed fetch untrusted banner; blocked fetch fail-closed;
+   `/web-search-domains` add/remove round-trip mutates the settings file
+   correctly + list view renders); README accurate as-is (no renamed public
+   symbol documented → no changes). **Refactor COMPLETE.**
 
 ## Next action
 
-Wave 7b (item 31 final gate): 7b subagent — full `npm test` + tsc + lint +
-live `pi -p` smoke (search, allowed fetch, blocked fetch, `/web-search-domains`
-round-trip) + README check (no renamed public symbol documented → no changes
-expected). On green: update ledger + plan (mark items 29–31 done, refactor
-COMPLETE), commit docs, and report the final state to the user. One agent at
-a time.
+**Refactor COMPLETE.** All phases (0–7) are committed and gated. All 31 plan
+items are done. Final state: 149/149 tests, tsc clean, lint clean; live smoke
+(search, allowed fetch, blocked fetch, `/web-search-domains` round-trip, F8
+config-warning notify) green; frozen public surface byte-identical; behavior
+preserving modulo the single intentional F8 change. No further action pending.
