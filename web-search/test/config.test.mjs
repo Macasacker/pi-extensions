@@ -111,6 +111,100 @@ await test("malformed settings file is treated as absent", () => {
 	}
 });
 
+await test("should warn when the global settings file is malformed JSON", () => {
+	const environment = makeEnvironment();
+	const globalSettingsFile = path.join(environment.home, ".pi", "agent", "settings.json");
+	try {
+		fs.writeFileSync(globalSettingsFile, "{not json");
+
+		const { config, configWarnings } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
+
+		assert.equal(configWarnings.length, 1);
+		assert.ok(configWarnings[0].includes(globalSettingsFile), "warning names the file");
+		assert.ok(configWarnings[0].includes("webSearch"), "warning mentions the webSearch settings");
+		assert.deepEqual(config.allowedDomains, BUILTIN_DEFAULTS.allowedDomains);
+	} finally {
+		environment.cleanup();
+	}
+});
+
+await test("should warn when the webSearch key is not an object", () => {
+	const environment = makeEnvironment();
+	const globalSettingsFile = path.join(environment.home, ".pi", "agent", "settings.json");
+	try {
+		environment.writeGlobal({ webSearch: "duckduckgo" });
+
+		const { config, configWarnings } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
+
+		assert.equal(configWarnings.length, 1);
+		assert.ok(configWarnings[0].includes(globalSettingsFile), "warning names the file");
+		assert.ok(configWarnings[0].includes("webSearch"), "warning mentions the webSearch key");
+		assert.deepEqual(config.allowedDomains, BUILTIN_DEFAULTS.allowedDomains);
+	} finally {
+		environment.cleanup();
+	}
+});
+
+await test("should warn listing every unknown key when the webSearch section has unrecognized keys", () => {
+	const environment = makeEnvironment();
+	const globalSettingsFile = path.join(environment.home, ".pi", "agent", "settings.json");
+	try {
+		environment.writeGlobal({ webSearch: { maxResults: 5, bogusKey: 1, alsoBogus: 2 } });
+
+		const { config, configWarnings } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
+
+		assert.equal(configWarnings.length, 1);
+		assert.ok(configWarnings[0].includes(globalSettingsFile), "warning names the file");
+		assert.ok(configWarnings[0].includes("bogusKey"), "warning lists the first unknown key");
+		assert.ok(configWarnings[0].includes("alsoBogus"), "warning lists the second unknown key");
+		assert.equal(config.maxResults, 5, "known keys are still applied");
+	} finally {
+		environment.cleanup();
+	}
+});
+
+await test("should not warn when the settings file contains only known webSearch keys", () => {
+	const environment = makeEnvironment();
+	try {
+		environment.writeGlobal({ webSearch: { maxResults: 5, allowedDomains: ["known.example"] }, otherKey: 42 });
+
+		const { configWarnings } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
+
+		assert.deepEqual(configWarnings, []);
+	} finally {
+		environment.cleanup();
+	}
+});
+
+await test("should not warn when no settings files exist", () => {
+	const environment = makeEnvironment();
+	try {
+		const { configWarnings } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
+
+		assert.deepEqual(configWarnings, []);
+	} finally {
+		environment.cleanup();
+	}
+});
+
+await test("should accumulate a warning per file when both the global and project settings files are problematic", () => {
+	const environment = makeEnvironment();
+	const globalSettingsFile = path.join(environment.home, ".pi", "agent", "settings.json");
+	const projectSettingsFile = path.join(environment.cwd, ".pi", "settings.json");
+	try {
+		fs.writeFileSync(globalSettingsFile, "{not json");
+		environment.writeProject({ webSearch: 42 });
+
+		const { configWarnings } = loadConfig({ cwd: environment.cwd, projectTrusted: true, homeDir: environment.home });
+
+		assert.equal(configWarnings.length, 2);
+		assert.ok(configWarnings[0].includes(globalSettingsFile), "first warning names the global file");
+		assert.ok(configWarnings[1].includes(projectSettingsFile), "second warning names the project file");
+	} finally {
+		environment.cleanup();
+	}
+});
+
 await test("sanitizeDomainEntry strips scheme/path and normalizes", () => {
 	assert.equal(sanitizeDomainEntry("https://docs.python.org/guide/"), "docs.python.org");
 	assert.equal(sanitizeDomainEntry("  Example.COM "), "example.com");

@@ -10,6 +10,9 @@
  * `allowedDomains` is UNIONED across sources so a project can add domains
  * without clobbering the global list. `useBuiltins: false` in user settings
  * disables the built-in default list.
+ *
+ * Problems found while reading a settings file (malformed JSON, a non-object
+ * `webSearch` key, unknown keys) are collected in `LoadedConfig.configWarnings`.
  */
 
 import fs from "node:fs";
@@ -42,6 +45,8 @@ export interface LoadedConfig {
 	config: WebSearchConfig;
 	/** Where each batch of allowed domains came from (for /web-search-domains). */
 	domainSources: DomainSource[];
+	/** Problems found while loading settings (malformed JSON, ignored keys). */
+	configWarnings: string[];
 }
 
 export const BUILTIN_DEFAULTS: WebSearchConfig = {
@@ -88,6 +93,26 @@ const NUMERIC_LIMITS = {
 
 type NumericConfigKey = keyof typeof NUMERIC_LIMITS;
 
+/**
+ * The recognized `webSearch` settings keys — the single source of truth for
+ * what `mergeSettingsFile` reads; any other key is ignored (with a warning).
+ */
+const KNOWN_WEBSEARCH_KEYS: ReadonlySet<string> = new Set([
+	"enabled",
+	"provider",
+	"braveApiKey",
+	"useBuiltins",
+	"allowSubdomains",
+	"confirmOutsideAllowlist",
+	"maxResults",
+	"maxContentChars",
+	"maxDownloadBytes",
+	"timeoutMs",
+	"maxRedirects",
+	"blockPrivateNetworks",
+	"allowedDomains",
+]);
+
 const CONFIG_DIR = ".pi";
 
 export function globalSettingsPath(): string {
@@ -98,15 +123,29 @@ export function projectSettingsPath(cwd: string): string {
 	return path.join(cwd, CONFIG_DIR, "settings.json");
 }
 
-function readSettingsJson(file: string): Record<string, unknown> | null {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+type SettingsFileReadResult =
+	| { status: "missing" }
+	| { status: "malformed" }
+	| { status: "ok", settings: Record<string, unknown> };
+
+function readSettingsJson(file: string): SettingsFileReadResult {
+	let fileContents: string;
 	try {
-		const fileContents = fs.readFileSync(file, "utf8");
-		const parsed = JSON.parse(fileContents);
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-		return null;
+		fileContents = fs.readFileSync(file, "utf8");
 	} catch {
-		return null; // missing or unreadable — treat as absent
+		return { status: "missing" }; // absent or unreadable — the normal case
 	}
+	try {
+		const parsed = JSON.parse(fileContents);
+		if (isPlainObject(parsed)) return { status: "ok", settings: parsed };
+	} catch {
+		// fall through: the file exists but is not usable
+	}
+	return { status: "malformed" };
 }
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -142,6 +181,69 @@ export function sanitizeDomainEntry(entry: unknown): string {
 	return host;
 }
 
+interface ConfigLoadState {
+	config: WebSearchConfig;
+	domainSources: DomainSource[];
+	configWarnings: string[];
+}
+
+function applyWebSearchSettings(config: WebSearchConfig, webSearchSettings: Record<string, unknown>): void {
+	config.enabled = asBool(webSearchSettings.enabled, config.enabled);
+	if (webSearchSettings.provider === "duckduckgo" || webSearchSettings.provider === "brave") config.provider = webSearchSettings.provider;
+	config.braveApiKey = asString(webSearchSettings.braveApiKey, config.braveApiKey);
+	config.useBuiltins = asBool(webSearchSettings.useBuiltins, config.useBuiltins);
+	config.allowSubdomains = asBool(webSearchSettings.allowSubdomains, config.allowSubdomains);
+	config.confirmOutsideAllowlist = asBool(webSearchSettings.confirmOutsideAllowlist, config.confirmOutsideAllowlist);
+	for (const key of Object.keys(NUMERIC_LIMITS) as NumericConfigKey[]) {
+		const limits = NUMERIC_LIMITS[key];
+		config[key] = clampInt(webSearchSettings[key], limits.min, limits.max, config[key]);
+	}
+	config.blockPrivateNetworks = asBool(webSearchSettings.blockPrivateNetworks, config.blockPrivateNetworks);
+	if (webSearchSettings.useBuiltins === false) {
+		// Drop built-in domains but keep user-provided ones.
+		const builtinSet = new Set(BUILTIN_DEFAULTS.allowedDomains.map((domain) => domain.toLowerCase()));
+		config.allowedDomains = config.allowedDomains.filter((domain) => !builtinSet.has(domain.toLowerCase()));
+	}
+}
+
+function mergeSettingsFile(state: ConfigLoadState, file: string): void {
+	const readResult = readSettingsJson(file);
+	if (readResult.status === "missing") return;
+	if (readResult.status === "malformed") {
+		state.configWarnings.push(`web-search: ${file} is not valid JSON — its webSearch settings are being ignored.`);
+		return;
+	}
+	const webSearchSection = readResult.settings.webSearch;
+	if (webSearchSection === undefined) return;
+	if (!isPlainObject(webSearchSection)) {
+		state.configWarnings.push(`web-search: the "webSearch" key in ${file} is not an object — it is being ignored.`);
+		return;
+	}
+	const unknownKeys = Object.keys(webSearchSection).filter((key) => !KNOWN_WEBSEARCH_KEYS.has(key));
+	if (unknownKeys.length > 0) {
+		state.configWarnings.push(`web-search: unknown webSearch key(s) in ${file} are being ignored: ${unknownKeys.join(", ")}.`);
+	}
+	applyWebSearchSettings(state.config, webSearchSection);
+
+	if (Array.isArray(webSearchSection.allowedDomains)) {
+		const fresh: string[] = [];
+		for (const entry of webSearchSection.allowedDomains) {
+			const sanitizedDomain = sanitizeDomainEntry(entry);
+			if (sanitizedDomain) fresh.push(sanitizedDomain);
+		}
+		if (fresh.length > 0) {
+			const seen = new Set(state.config.allowedDomains.map((domain) => domain.toLowerCase()));
+			for (const domain of fresh) {
+				if (!seen.has(domain.toLowerCase())) {
+					seen.add(domain.toLowerCase());
+					state.config.allowedDomains.push(domain);
+				}
+			}
+			state.domainSources.push({ path: file, domains: fresh });
+		}
+	}
+}
+
 /**
  * Load and merge configuration for a session.
  *
@@ -150,60 +252,20 @@ export function sanitizeDomainEntry(entry: unknown): string {
  * @param options.homeDir        override for tests (defaults to os.homedir())
  */
 export function loadConfig({ cwd, projectTrusted, homeDir = os.homedir() }: { cwd: string; projectTrusted: boolean; homeDir?: string }): LoadedConfig {
-	const config: WebSearchConfig = { ...BUILTIN_DEFAULTS, allowedDomains: [...BUILTIN_DEFAULTS.allowedDomains] };
-	const domainSources: DomainSource[] = [];
-	if (config.useBuiltins) {
-		domainSources.push({ path: "(built-in)", domains: [...config.allowedDomains] });
+	const state: ConfigLoadState = {
+		config: { ...BUILTIN_DEFAULTS, allowedDomains: [...BUILTIN_DEFAULTS.allowedDomains] },
+		domainSources: [],
+		configWarnings: [],
+	};
+	if (state.config.useBuiltins) {
+		state.domainSources.push({ path: "(built-in)", domains: [...state.config.allowedDomains] });
 	}
 
-	const merge = (file: string) => {
-		const settings = readSettingsJson(file);
-		const webSearchSection = settings?.webSearch;
-		if (!webSearchSection || typeof webSearchSection !== "object" || Array.isArray(webSearchSection)) return;
-		const webSearchSettings = webSearchSection as Record<string, unknown>;
-
-		config.enabled = asBool(webSearchSettings.enabled, config.enabled);
-		if (webSearchSettings.provider === "duckduckgo" || webSearchSettings.provider === "brave") config.provider = webSearchSettings.provider;
-		config.braveApiKey = asString(webSearchSettings.braveApiKey, config.braveApiKey);
-		config.useBuiltins = asBool(webSearchSettings.useBuiltins, config.useBuiltins);
-		config.allowSubdomains = asBool(webSearchSettings.allowSubdomains, config.allowSubdomains);
-		config.confirmOutsideAllowlist = asBool(webSearchSettings.confirmOutsideAllowlist, config.confirmOutsideAllowlist);
-		for (const key of Object.keys(NUMERIC_LIMITS) as NumericConfigKey[]) {
-			const limits = NUMERIC_LIMITS[key];
-			config[key] = clampInt(webSearchSettings[key], limits.min, limits.max, config[key]);
-		}
-		config.blockPrivateNetworks = asBool(webSearchSettings.blockPrivateNetworks, config.blockPrivateNetworks);
-
-		if (webSearchSettings.useBuiltins === false) {
-			// Drop built-in domains but keep user-provided ones.
-			const builtinSet = new Set(BUILTIN_DEFAULTS.allowedDomains.map((domain) => domain.toLowerCase()));
-			config.allowedDomains = config.allowedDomains.filter((domain) => !builtinSet.has(domain.toLowerCase()));
-		}
-
-		if (Array.isArray(webSearchSettings.allowedDomains)) {
-			const fresh: string[] = [];
-			for (const entry of webSearchSettings.allowedDomains) {
-				const sanitizedDomain = sanitizeDomainEntry(entry);
-				if (sanitizedDomain) fresh.push(sanitizedDomain);
-			}
-			if (fresh.length > 0) {
-				const seen = new Set(config.allowedDomains.map((domain) => domain.toLowerCase()));
-				for (const domain of fresh) {
-					if (!seen.has(domain.toLowerCase())) {
-						seen.add(domain.toLowerCase());
-						config.allowedDomains.push(domain);
-					}
-				}
-				domainSources.push({ path: file, domains: fresh });
-			}
-		}
-	};
-
 	const globalPath = path.join(homeDir, CONFIG_DIR, "agent", "settings.json");
-	merge(globalPath);
-	if (projectTrusted) merge(projectSettingsPath(cwd));
+	mergeSettingsFile(state, globalPath);
+	if (projectTrusted) mergeSettingsFile(state, projectSettingsPath(cwd));
 
-	return { config, domainSources };
+	return { config: state.config, domainSources: state.domainSources, configWarnings: state.configWarnings };
 }
 
 /**
@@ -215,7 +277,8 @@ export function updateSettingsDomains(
 	file: string,
 	mutate: (list: string[]) => string[],
 ): string {
-	const settings = readSettingsJson(file) ?? {};
+	const readResult = readSettingsJson(file);
+	const settings = readResult.status === "ok" ? readResult.settings : {};
 	const webSearchSection = (settings.webSearch ?? {}) as Record<string, unknown>;
 	const current = Array.isArray(webSearchSection.allowedDomains)
 		? (webSearchSection.allowedDomains as unknown[]).map(sanitizeDomainEntry).filter(Boolean)
