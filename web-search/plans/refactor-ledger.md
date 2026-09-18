@@ -401,8 +401,23 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
    throws `Error("Search cancelled")` from `providers/common.ts` which
    `runProviderSearch` rethrows as a tool error (only abort-after-settle maps
    to "Cancelled") — a candidate follow-up, not a gate blocker.
-7. [ ] **6f — item 28**: gate — full `npm test` + live smoke + fresh
-   adversarial review pass (bypass matrix re-verified).
+7. [x] **6f — item 28**: gate — full `npm test` + live smoke + fresh adversarial
+   review pass (bypass matrix re-verified). — done: **6f-smoke** green
+   (149/149, tsc, lint; all 6 live `pi -p` scenarios PASS — search allowlist
+   filtering, allowed fetch untrusted banner, blocked non-allowlisted
+   fail-closed, blocked private-IP fail-closed, subdomain allowed, F8
+   config-warning notify rendered in a real TUI with one-shot dedupe
+   confirmed live; multi-line `\n` join wrapping resolved). **6f-review
+   Verdict: Ready** (49 adversarial probes; allowlist matching / redirect
+   re-validation / sanitization / grants / drift detection all INTACT; F8
+   confirmed the sole behavior delta; frozen surface byte-identical to
+   pre-refactor baseline `d69a101`; no exploitable bypass gap). Non-blocking
+   pre-existing observations (byte-preserved, not refactor defects): non-HTML
+   fetch body + raw `redirect.from` reach the LLM context unsanitized (no TUI
+   injection — the sanitizing renderers are the TUI sink); search mid-fetch
+   abort surfaces as a tool error; no Brave 429 test; user-confirmed grants
+   intentionally override `blockPrivateNetworks` for IP-literal hosts
+   (documented + tested). Phase 6 CLOSED.
 
 ## Phase 7 wave plan (items 29–31)
 
@@ -414,10 +429,10 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Next action
 
-Wave 6f (item 28 gate): 6f-smoke subagent — full `npm test` + live `pi -p`
-smoke (search with allowlist filtering, allowed fetch with untrusted banner
-+ truncation temp file, blocked fetch fail-closed, bypass matrix
-re-verification, one-time config-warning notify renders in a real TUI). Then
-6f-review subagent — fresh adversarial pass re-verifying the security-critical
-paths (allowlist matching, redirect re-validation, sanitization, grants, drift
-detection) against the final post-fix code. One agent at a time.
+Phase 6 is CLOSED. Wave 7a (items 29+30): implementation subagent — drop
+`// ---- section ----` banners from index.ts + src files (keep file-header doc
+comments) and add the missing "why" comments on intentional swallows (best-effort
+`body.cancel()`, `noteAllowlistChange` reset-on-unreadable-settings). Behavior-
+preserving (comments only). After it reports: orchestrator verifies diff +
+re-runs gates → adversarial review subagent → fix subagent if findings → commit
+→ ledger → wave 7b (item 31 final gate). One agent at a time.

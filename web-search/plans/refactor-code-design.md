@@ -1,7 +1,7 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887`, 6d-notify `2a99b80`, 6e `73730a4`+fix `d9e43c4` done; items 25–27 complete; 6f gate next).**
-> Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
+> **STATUS: IN PROGRESS — phase 6 CLOSED (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887`, 6d-notify `2a99b80`, 6e `73730a4`+fix `d9e43c4`, 6f gate green). Phase 7 (hygiene sweep) next.**
+> Phases 0–6 are committed (see git log). Phase 7 is the final phase.
 > See `plans/refactor-ledger.md` for the full state.
 
 Date: 2026-09-13. Method: full audit of all 10 source files (~1,560 lines) against the
@@ -342,7 +342,12 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
 - [x] 27. Hoist `PROVIDER_MAX_BODY_BYTES` to `providers/types.ts` (F9).
     **Done:** wave 6e `73730a4` — single source of truth in `types.ts`
     (stays dependency-free, no circular import); both providers import it.
-- [ ] 28. **Gate: full `npm test` + live smoke + fresh adversarial review pass**
+- [x] 28. **Gate: full `npm test` + live smoke + fresh adversarial review pass**
+    — done (wave 6f): 149/149 + tsc + lint; all 6 live `pi -p` scenarios PASS
+    (incl. F8 config-warning notify in a real TUI, one-shot dedupe confirmed
+    live); fresh adversarial gate review **Verdict: Ready** (49 bypass probes;
+    all five security-critical paths intact; F8 the sole behavior delta; frozen
+    surface byte-identical to pre-refactor baseline). Phase 6 closed.
     (same method as the original two rounds; the refactor touched the security
     paths' shape, so the bypass matrix gets re-verified).
 
