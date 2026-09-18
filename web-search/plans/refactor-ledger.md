@@ -345,16 +345,22 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
    byte-identity of the shared preamble vs both original catch blocks;
    parse moves verbatim; frozen surface intact). Pre-existing coverage gaps
    confirmed unchanged (incl. the Brave 429 gap — ledger carry-over).
-4. [ ] **6d — item 25 (part 1, config.ts only)**: `loadConfig`'s `merge`
-   closure → named `mergeSettingsFile(loaded, file)` operating on an explicit
-   accumulator; `configWarnings: string[]` added to `LoadedConfig`; warnings
-   collected for (a) malformed JSON (file present but unparseable), (b) a
-   non-object `webSearch` key, (c) unknown/ignored `webSearch` keys (a
-   `KNOWN_WEBSEARCH_KEYS` set as the single source of truth). `readSettingsJson`
-   must distinguish "file missing" (no warning) from "file present but
-   malformed" (warning). New `config.test.mjs` tests. This is the first half
-   of the one intentional behavior change in the refactor (F8) — the second
-   half (surfacing) is 6d-notify.
+4. [x] **6d — item 25 (part 1, config.ts only)**: `loadConfig`'s `merge`
+   closure → named `mergeSettingsFile(state, file)` on an explicit
+   `ConfigLoadState` bag `{ config, domainSources, configWarnings }` (scalar
+   block lifted verbatim into `applyWebSearchSettings`); `configWarnings:
+   string[]` added to `LoadedConfig`; warnings for (a) file not a usable JSON
+   object, (b) `webSearch` present but not a plain object, (c) unknown
+   `webSearch` keys (one warning, via `KNOWN_WEBSEARCH_KEYS` single source of
+   truth); missing file does NOT warn; `readSettingsJson` → discriminated
+   union (`missing`/`malformed`/`ok`); `updateSettingsDomains` maps
+   missing/malformed → `{}` as before. — done: committed `2d45887`; gates
+   green (146/146, tsc, lint); adversarial review **Verdict: Ready** (22-case
+   differential byte-identity of config/domainSources; KNOWN_WEBSEARCH_KEYS
+   exact-match cross-check; `webSearch: null` deviation adjudicated within
+   F8's intent — kept). Optional note folded into 6d-notify: reword the
+   "not valid JSON" message for valid-JSON top-level non-objects (e.g.
+   `[1,2,3]`) while shaping it for display.
 5. [ ] **6d-notify — item 25 (part 2, session.ts + tools/common.ts)**:
    one-shot `warnedConfig` flag on `SessionState` (+ `createSessionState`),
    a `warnIfConfigWarnings(pi, ctx, configWarnings, session)` helper, called
@@ -377,10 +383,12 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Next action
 
-Wave 6d: implementation subagent for `src/config.ts` (item 25 part 1) —
-`mergeSettingsFile(loaded, file)` + `configWarnings` collection (malformed
-JSON, non-object webSearch, ignored keys; KNOWN_WEBSEARCH_KEYS set;
-readSettingsJson distinguishes missing vs malformed). New config tests.
-After it reports: orchestrator verifies diff + re-runs gates → adversarial
-review subagent → fix subagent if findings → commit → ledger → wave
-6d-notify.
+Wave 6d-notify: implementation subagent for `src/session.ts` +
+`src/tools/common.ts` (item 25 part 2) — one-shot `warnedConfig` flag on
+`SessionState` (+ `createSessionState`), `warnIfConfigWarnings(ctx,
+configWarnings, session)` helper in session.ts, called in
+`prepareToolExecution` after `assertEnabled`; reword the "not valid JSON"
+message for valid-JSON top-level non-objects (folded 6d optional note). New
+e2e test (warns once, not twice; resets on session reset). After it reports:
+orchestrator verifies diff + re-runs gates → adversarial review subagent →
+fix subagent if findings → commit → ledger → wave 6e.

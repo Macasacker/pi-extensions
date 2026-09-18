@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c` done; item 25 split into 6d + 6d-notify).**
+> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887` done; item 25 part 2 = 6d-notify next).**
 > Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -318,10 +318,15 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     Brave 401/403/429/`!ok` ladder) + the DDG challenge check + the Brave
     no-key pre-check stay inline (different frozen messages); `BraveWebSearchResponse`
     named interface replaces the inline cast. Wave 6c, committed `f35748c`.
-- [ ] 25. `loadConfig`'s `merge` closure → named `mergeSettingsFile(loaded, file)`
+- [x] 25. `loadConfig`'s `merge` closure → named `mergeSettingsFile(loaded, file)`
     operating on explicit values; collect `configWarnings: string[]` in
     `LoadedConfig` (malformed JSON, ignored keys) and surface them via a
     one-time `ctx.ui.notify` in the tool execute paths (F8).
+    **Split into two waves:** part 1 (config.ts: `mergeSettingsFile(state, file)`
+    on a `ConfigLoadState` bag + `applyWebSearchSettings`; `configWarnings`
+    collection; `readSettingsJson` discriminated union) — wave 6d, committed
+    `2d45887`. Part 2 (one-time `ctx.ui.notify` surfacing via a one-shot
+    `warnedConfig` flag in `prepareToolExecution`) — wave 6d-notify.
 - [ ] 26. Replace the string-matched cancelled check (index.ts:352) with
     `signal?.aborted` + `err instanceof FetchError && err.message ===
     "cancelled"` — `safeFetch` already throws a distinct `FetchError(current,
