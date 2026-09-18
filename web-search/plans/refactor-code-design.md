@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 CLOSED (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887`, 6d-notify `2a99b80`, 6e `73730a4`+fix `d9e43c4`, 6f gate green). Phase 7 (hygiene sweep) next.**
+> **STATUS: IN PROGRESS — phase 7 executing (7a `6776e79` done; 7b final gate next).**
 > Phases 0–6 are committed (see git log). Phase 7 is the final phase.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -353,10 +353,16 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
 
 ### Phase 7 — Hygiene sweep
 
-- [ ] 29. Drop `// ---- section ----` banners from index.ts and src files; keep the
+- [x] 29. Drop `// ---- section ----` banners from index.ts and src files; keep the
     file-header doc comments (they carry the security model).
-- [ ] 30. Add the missing "why" comments on intentional swallows: best-effort
+    **Done:** wave 7a `6776e79` — full-width banner block removed; inline
+    `// -- <name> ----` labels simplified to plain `// <name>`; no banners
+    remain; file-header doc comment untouched.
+- [x] 30. Add the missing "why" comments on intentional swallows: best-effort
     `body.cancel()`, `noteAllowlistChange`'s reset-on-unreadable-settings.
+    **Done:** wave 7a `6776e79` — why-comments on the `readBodyCapped`
+    truncation site, the `safeFetch` ≥400 site, and the `noteAllowlistChange`
+    catch (the `resolveRedirectTarget` 3xx drain already had one).
 - [ ] 31. Final `npm test`, live smoke, README touch-ups only if a renamed public
     symbol is documented there (none expected — the public surface is tools,
     commands, and the `webSearch` settings key, all unchanged).

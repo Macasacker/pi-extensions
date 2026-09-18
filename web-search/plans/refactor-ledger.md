@@ -421,18 +421,26 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Phase 7 wave plan (items 29–31)
 
-1. [ ] **7a — items 29+30**: drop `// ---- section ----` banners (keep
-   file-header doc comments); add "why" comments on intentional swallows
-   (best-effort `body.cancel()`, `noteAllowlistChange` reset-on-unreadable).
-2. [ ] **7b — item 31**: final `npm test` + live smoke; README touch-ups only
-   if a renamed public symbol is documented (none expected).
+1. [x] **7a — items 29+30** (comment-only): drop the full-width `// ----
+   extension ----` banner block in index.ts + simplify the inline
+   `// -- <name> ----` section labels to plain `// <name>`; add "why" comments
+   on the intentional swallows (best-effort `body.cancel()` at the
+   `readBodyCapped` truncation site + `safeFetch` ≥400 site; `noteAllowlistChange`
+   reset-on-unreadable-settings). File-header doc comment (security model)
+   untouched. — done: committed `6776e79`; gates green (149/149, tsc, lint);
+   adversarial review **Verdict: Ready** (mechanically verified comment-only —
+   zero non-comment lines changed; security-model header byte-identical; all
+   four "why" comments accurate; no banners remain; frozen surface intact).
+2. [ ] **7b — item 31**: final gate — full `npm test` + tsc + lint + live
+   `pi -p` smoke (search, allowed fetch, blocked fetch, `/web-search-domains`
+   round-trip per the Definition of Done) + README check (no renamed public
+   symbol documented → no README changes expected).
 
 ## Next action
 
-Phase 6 is CLOSED. Wave 7a (items 29+30): implementation subagent — drop
-`// ---- section ----` banners from index.ts + src files (keep file-header doc
-comments) and add the missing "why" comments on intentional swallows (best-effort
-`body.cancel()`, `noteAllowlistChange` reset-on-unreadable-settings). Behavior-
-preserving (comments only). After it reports: orchestrator verifies diff +
-re-runs gates → adversarial review subagent → fix subagent if findings → commit
-→ ledger → wave 7b (item 31 final gate). One agent at a time.
+Wave 7b (item 31 final gate): 7b subagent — full `npm test` + tsc + lint +
+live `pi -p` smoke (search, allowed fetch, blocked fetch, `/web-search-domains`
+round-trip) + README check (no renamed public symbol documented → no changes
+expected). On green: update ledger + plan (mark items 29–31 done, refactor
+COMPLETE), commit docs, and report the final state to the user. One agent at
+a time.
