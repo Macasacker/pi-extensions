@@ -381,9 +381,26 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
    one-shot flag pattern split (`warnedBrave` is the odd one out, not this
    wave). 6f gate should confirm the one-time notify renders in a real TUI
    smoke (multi-line `\n` join untested against real TUI wrapping).
-6. [ ] **6e — items 26+27**: cancelled check → `signal?.aborted` +
-   `err instanceof FetchError && err.message === "cancelled"` (no string
+6. [x] **6e — items 26+27**: cancelled check → `signal?.aborted` (no string
    matching); hoist `PROVIDER_MAX_BODY_BYTES` to `providers/types.ts`.
+   — done: committed `73730a4` (+ fix `d9e43c4`); gates green (149/149, tsc,
+   lint, verified standalone on a clean tree); adversarial review **Verdict:
+   Ready** with one Minor finding: the type-based clause
+   `(error instanceof FetchError && error.message === "cancelled")` was
+   **dead code** — the `FetchError` constructor prefixes its message
+   (`Fetch failed: <url> — <message>`), so `.message` can never equal the
+   bare `"cancelled"`. The effective check was `signal?.aborted` alone (which
+   the reviewer verified covers every real abort path; a timeout correctly
+   does not abort the caller's signal). Fixed in `d9e43c4`: dropped the inert
+   clause, kept `signal?.aborted` with a why-comment (behavior-preserving —
+   the clause was never true); `errorMessage` + `FetchError` import retained
+   for the log detail + final throw. Note: the plan text's premise (that
+   `FetchError(current, "cancelled")` is matchable via `.message`) was wrong;
+   `signal?.aborted` is the sole effective check. Pre-existing (not a 6e
+   regression): on the *search* path, a mid-fetch abort in the real providers
+   throws `Error("Search cancelled")` from `providers/common.ts` which
+   `runProviderSearch` rethrows as a tool error (only abort-after-settle maps
+   to "Cancelled") — a candidate follow-up, not a gate blocker.
 7. [ ] **6f — item 28**: gate — full `npm test` + live smoke + fresh
    adversarial review pass (bypass matrix re-verified).
 
@@ -397,8 +414,10 @@ Phase 5 complete (waves 5a–5e; code commits `49a97e0`, `9a21473`,
 
 ## Next action
 
-Wave 6e review is in flight (commit `73730a4`, base `2a99b80`). On its Ready
-verdict: update the ledger for 6e → dispatch wave 6f (item 28 gate: full
-`npm test` + live `pi -p` smoke + fresh adversarial review pass, bypass
-matrix re-verified; also confirm the one-time config-warning notify renders
-in a real TUI smoke). One agent at a time.
+Wave 6f (item 28 gate): 6f-smoke subagent — full `npm test` + live `pi -p`
+smoke (search with allowlist filtering, allowed fetch with untrusted banner
++ truncation temp file, blocked fetch fail-closed, bypass matrix
+re-verification, one-time config-warning notify renders in a real TUI). Then
+6f-review subagent — fresh adversarial pass re-verifying the security-critical
+paths (allowlist matching, redirect re-validation, sanitization, grants, drift
+detection) against the final post-fix code. One agent at a time.

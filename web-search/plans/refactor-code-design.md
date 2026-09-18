@@ -1,6 +1,6 @@
 # web-search — Refactor plan (code-design audit)
 
-> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887`, 6d-notify `2a99b80`, 6e `73730a4` done; item 25 complete; 6f gate next).**
+> **STATUS: IN PROGRESS — phase 6 executing (waves 6a `43bcafc`, 6b `359e1c1`, 6c `f35748c`, 6d `2d45887`, 6d-notify `2a99b80`, 6e `73730a4`+fix `d9e43c4` done; items 25–27 complete; 6f gate next).**
 > Phases 0–5 are committed (see git log). Phase 6 is approved and executing.
 > See `plans/refactor-ledger.md` for the full state.
 
@@ -328,11 +328,20 @@ blocked domain) and, after phase 6, a fresh adversarial review pass.
     `2d45887`. Part 2 (one-time `ctx.ui.notify` surfacing via a one-shot
     `warnedConfig` flag in `prepareToolExecution`) — wave 6d-notify, committed
     `2a99b80`. Item 25 complete.
-- [ ] 26. Replace the string-matched cancelled check (index.ts:352) with
+- [x] 26. Replace the string-matched cancelled check (index.ts:352) with
     `signal?.aborted` + `err instanceof FetchError && err.message ===
     "cancelled"` — `safeFetch` already throws a distinct `FetchError(current,
     "cancelled")`, so match on the error type, not the message text.
-- [ ] 27. Hoist `PROVIDER_MAX_BODY_BYTES` to `providers/types.ts` (F9).
+    **Deviations:** the check now lives in `src/tools/fetch.ts
+    handleFetchFailure` (index.ts was decomposed in phase 5). The type-based
+    clause as written was dead code (the `FetchError` constructor prefixes its
+    message, so `.message` is never the bare `"cancelled"`); the effective and
+    authoritative check is `signal?.aborted` alone, which covers every real
+    abort path. Final form (wave 6e `73730a4` + fix `d9e43c4`):
+    `if (signal?.aborted)` with a why-comment; the inert clause dropped.
+- [x] 27. Hoist `PROVIDER_MAX_BODY_BYTES` to `providers/types.ts` (F9).
+    **Done:** wave 6e `73730a4` — single source of truth in `types.ts`
+    (stays dependency-free, no circular import); both providers import it.
 - [ ] 28. **Gate: full `npm test` + live smoke + fresh adversarial review pass**
     (same method as the original two rounds; the refactor touched the security
     paths' shape, so the bypass matrix gets re-verified).
