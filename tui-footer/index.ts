@@ -123,6 +123,60 @@ type FooterData = {
 	onBranchChange(cb: () => void): () => void;
 };
 
+/**
+ * Build the stats line: session token totals on the left, model id on the
+ * right. Stats are the normal text color so they stand out from the dim pwd
+ * line; the right-side model stays dim. Colored spans inside (context
+ * pressure) keep their own codes.
+ */
+function buildStatsLine(width: number, theme: Theme, footerData: FooterData, ctx: ExtensionContext): string {
+	// Session token totals (same accounting as the built-in footer), with the
+	// context gauge last so narrow terminals truncate it first, like pi does.
+	const spans: { text: string; color?: string }[] = [];
+	const t = computeTotals(ctx);
+	if (t.input > 0) spans.push({ text: `↑${fmt(t.input)}` });
+	if (t.output > 0) spans.push({ text: `↓${fmt(t.output)}` });
+	if (t.cacheRead > 0) spans.push({ text: `cached ${fmt(t.cacheRead)}` });
+	if (t.cacheWrite > 0) spans.push({ text: `cache-write ${fmt(t.cacheWrite)}` });
+	if (t.hit !== undefined) spans.push({ text: `cache hit ${t.hit.toFixed(1)}%` });
+	if (t.cost > 0.0005) spans.push({ text: `$${t.cost.toFixed(3)}` });
+
+	// Context usage: token amounts, colored by pressure (>70% warning, >90% error)
+	const cu = ctx.getContextUsage?.();
+	const model = ctx.model;
+	const window = cu?.contextWindow ?? model?.contextWindow ?? 0;
+	const pct = cu?.percent;
+	const ctxUsed = cu?.tokens ?? null;
+	if (window > 0 || ctxUsed !== null) {
+		const auto = autoCompactEnabled(ctx.cwd ?? process.cwd()) ? " (auto)" : "";
+		const color = pct !== null && pct !== undefined && pct > 90 ? "error" : pct !== null && pct !== undefined && pct > 70 ? "warning" : undefined;
+		spans.push({ text: `ctx ${ctxUsed === null ? "?" : fmt(ctxUsed)}/${fmt(window)}${auto}`, color });
+	}
+
+	// Right side: model id + thinking level (+ provider when ambiguous)
+	let right = model?.id ?? "no-model";
+	if (model?.reasoning) {
+		const level = ctx.thinkingLevel ?? "off";
+		right = level === "off" ? `${right} • thinking off` : `${right} • ${level}`;
+	}
+	if (footerData.getAvailableProviderCount?.() > 1 && model) right = `(${model.provider}) ${right}`;
+
+	// Compose the line, dropping least-essential sections if too narrow.
+	const minPadding = 2;
+	const rightWidth = visibleWidth(right);
+	const available = Math.max(1, width - rightWidth - minPadding);
+	const colored = (s: { text: string; color?: string }) => (s.color ? theme.fg(s.color, s.text) : theme.fg("text", s.text));
+
+	let left = spans.map(colored).join(" ");
+	while (visibleWidth(left) > available && spans.length > 1) {
+		spans.pop();
+		left = spans.map(colored).join(" ");
+	}
+	if (visibleWidth(left) > available) left = truncateToWidth(left, available, theme.fg("dim", "…"));
+	const pad = " ".repeat(Math.max(0, width - visibleWidth(left) - rightWidth));
+	return truncateToWidth(left + pad + theme.fg("dim", right), width);
+}
+
 function renderFooter(width: number, theme: Theme, footerData: FooterData, ctx: ExtensionContext | undefined): string[] {
 	if (!ctx || width < 10) return [];
 	try {
@@ -133,54 +187,8 @@ function renderFooter(width: number, theme: Theme, footerData: FooterData, ctx: 
 			theme.fg("dim", "..."),
 		);
 
-		// Session token totals (same accounting as the built-in footer), with the
-		// context gauge last so narrow terminals truncate it first, like pi does.
-		const spans: { text: string; color?: string }[] = [];
-		const t = computeTotals(ctx);
-		if (t.input > 0) spans.push({ text: `↑${fmt(t.input)}` });
-		if (t.output > 0) spans.push({ text: `↓${fmt(t.output)}` });
-		if (t.cacheRead > 0) spans.push({ text: `cached ${fmt(t.cacheRead)}` });
-		if (t.cacheWrite > 0) spans.push({ text: `cache-write ${fmt(t.cacheWrite)}` });
-		if (t.hit !== undefined) spans.push({ text: `cache hit ${t.hit.toFixed(1)}%` });
-		if (t.cost > 0.0005) spans.push({ text: `$${t.cost.toFixed(3)}` });
-
-		// Context usage: token amounts, colored by pressure (>70% warning, >90% error)
-		const cu = ctx.getContextUsage?.();
-		const model = ctx.model;
-		const window = cu?.contextWindow ?? model?.contextWindow ?? 0;
-		const pct = cu?.percent;
-		const ctxUsed = cu?.tokens ?? null;
-		if (window > 0 || ctxUsed !== null) {
-			const auto = autoCompactEnabled(ctx.cwd ?? process.cwd()) ? " (auto)" : "";
-			const color = pct !== null && pct !== undefined && pct > 90 ? "error" : pct !== null && pct !== undefined && pct > 70 ? "warning" : undefined;
-			spans.push({ text: `ctx ${ctxUsed === null ? "?" : fmt(ctxUsed)}/${fmt(window)}${auto}`, color });
-		}
-
-		// Right side: model id + thinking level (+ provider when ambiguous)
-		let right = model?.id ?? "no-model";
-		if (model?.reasoning) {
-			const level = ctx.thinkingLevel ?? "off";
-			right = level === "off" ? `${right} • thinking off` : `${right} • ${level}`;
-		}
-		if (footerData.getAvailableProviderCount?.() > 1 && model) right = `(${model.provider}) ${right}`;
-
-		// Compose the stats line, dropping least-essential sections if too narrow.
-		// Stats are the normal text color so they stand out from the dim pwd line;
-		// the right-side model stays dim. Colored spans inside (context pressure)
-		// keep their own codes.
-		const minPadding = 2;
-		const rightWidth = visibleWidth(right);
-		const available = Math.max(1, width - rightWidth - minPadding);
-		const colored = (s: { text: string; color?: string }) => (s.color ? theme.fg(s.color, s.text) : theme.fg("text", s.text));
-
-		let left = spans.map(colored).join(" ");
-		while (visibleWidth(left) > available && spans.length > 1) {
-			spans.pop();
-			left = spans.map(colored).join(" ");
-		}
-		if (visibleWidth(left) > available) left = truncateToWidth(left, available, theme.fg("dim", "…"));
-		const pad = " ".repeat(Math.max(0, width - visibleWidth(left) - rightWidth));
-		const line2 = truncateToWidth(left + pad + theme.fg("dim", right), width);
+		// Line 2: session stats (left) + model (right)
+		const line2 = buildStatsLine(width, theme, footerData, ctx);
 
 		// Line 3: extension status lines (e.g. MCP) — kept as-is, including any
 		// ANSI colors the setting extension chose.
