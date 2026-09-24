@@ -63,22 +63,26 @@ export function extractReadableText(html: string): ExtractedPage {
 	collectText(main, textFragments);
 
 	// Normalize whitespace: collapse blank-line runs, trim line ends.
-	// Then strip terminal escape sequences / control chars: this text is
-	// rendered in the TUI and sent to the LLM, both of which would otherwise
-	// be sinks for OSC/CSI injection from the fetched page.
-	const text = sanitizeForTui(
-		textFragments
-			.join("")
-			.replace(/[ \t]+\n/g, "\n")
-			.replace(/\n{3,}/g, "\n\n")
-			.split("\n")
-			.map((line) => line.trim())
-			.join("\n")
-			.replace(/\n{3,}/g, "\n\n")
-			.trim(),
-	);
+	const collectedText = normalizeWhitespace(textFragments.join(""));
+
+	// Strip terminal escape sequences / control chars: this text is rendered
+	// in the TUI and sent to the LLM, both of which would otherwise be sinks
+	// for OSC/CSI injection from the fetched page.
+	const text = sanitizeForTui(collectedText);
 
 	return { title, text };
+}
+
+/** Collapse blank-line runs and trim line ends in the collected text. */
+function normalizeWhitespace(text: string): string {
+	return text
+		.replace(/[ \t]+\n/g, "\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.split("\n")
+		.map((line) => line.trim())
+		.join("\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
 }
 
 export interface Truncation {
@@ -92,11 +96,13 @@ export interface Truncation {
 const DEFAULT_MAX_LINES = 2000;
 
 /**
- * Truncate text to maxChars (and maxLines). Keeps the head — search/fetch
- * content is front-loaded. Mirrors pi's built-in tool truncation contract:
- * callers append a note telling the LLM where the full output went.
+ * Truncate text to maxChars (and maxLines, defaulting to the backstop).
+ * Keeps the head — search/fetch content is front-loaded. Mirrors pi's
+ * built-in tool truncation contract: callers append a note telling the LLM
+ * where the full output went.
  */
-export function truncateText(text: string, maxChars: number, maxLines: number = DEFAULT_MAX_LINES): Truncation {
+export function truncateText(text: string, options: { maxChars: number; maxLines?: number }): Truncation {
+	const { maxChars, maxLines = DEFAULT_MAX_LINES } = options;
 	let content = text;
 	let truncated = false;
 

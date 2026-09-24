@@ -58,11 +58,11 @@ async function runProviderSearch(params: WebSearchParams, deps: WebSearchDeps): 
 	try {
 		searchResults = await provider.search(params.query, params.max_results ?? config.maxResults, signal ?? new AbortController().signal);
 	} catch (error) {
-		logCall(pi, ctx, { kind: "search", target: params.query, ok: false, detail: String(error instanceof Error ? error.message : error) });
+		logCall({ pi, ctx, entry: { kind: "search", target: params.query, ok: false, detail: String(error instanceof Error ? error.message : error) } });
 		throw error;
 	}
 	if (signal?.aborted) {
-		logCall(pi, ctx, { kind: "search", target: params.query, ok: false, detail: "cancelled" });
+		logCall({ pi, ctx, entry: { kind: "search", target: params.query, ok: false, detail: "cancelled" } });
 		return { cancelled: true, results: [] };
 	}
 	return { cancelled: false, results: searchResults };
@@ -85,22 +85,35 @@ function filterResultsByAllowlist(searchResults: SearchResult[], allowlistOption
 	return { allowed, hidden };
 }
 
-/** Build the tool's output text and structured details from the filtered results. */
-function formatSearchResults(params: WebSearchParams, config: WebSearchConfig, provider: SearchProvider, filtered: FilteredSearchResults): AgentToolResult<SearchDetails> {
-	const { allowed, hidden } = filtered;
-	let text: string;
+/** Build the human-readable result list, or the no-results guidance text. */
+function buildSearchResultsText(query: string, allowed: NonNullable<SearchDetails["results"]>, hidden: number, allowedDomains: string[]): string {
 	if (allowed.length === 0) {
-		text =
-			`No results from allowed domains for: ${sanitizeForTui(params.query)}\n` +
+		return (
+			`No results from allowed domains for: ${sanitizeForTui(query)}\n` +
 			`${hidden} result(s) hidden by the domain allowlist.\n` +
-			`Allowed domains: ${config.allowedDomains.join(", ") || "(none)"}\n` +
-			`Use /web-search-domains add <domain> to widen the allowlist.`;
-	} else {
-		text = allowed
-			.map((result, index) => `[${index + 1}] ${result.title}\n    ${result.url}\n    ${result.snippet}`)
-			.join("\n\n");
-		if (hidden > 0) text += `\n\n(${hidden} result(s) hidden: domain not in allowlist)`;
+			`Allowed domains: ${allowedDomains.join(", ") || "(none)"}\n` +
+			`Use /web-search-domains add <domain> to widen the allowlist.`
+		);
 	}
+	let text = allowed
+		.map((result, index) => `[${index + 1}] ${result.title}\n    ${result.url}\n    ${result.snippet}`)
+		.join("\n\n");
+	if (hidden > 0) text += `\n\n(${hidden} result(s) hidden: domain not in allowlist)`;
+	return text;
+}
+
+/** Everything `formatSearchResults` needs: the request, config, provider, and the filtered results. */
+interface SearchFormatContext {
+	params: WebSearchParams;
+	config: WebSearchConfig;
+	provider: SearchProvider;
+	filtered: FilteredSearchResults;
+}
+
+/** Build the tool's output text and structured details from the filtered results. */
+function formatSearchResults({ params, config, provider, filtered }: SearchFormatContext): AgentToolResult<SearchDetails> {
+	const { allowed, hidden } = filtered;
+	const text = buildSearchResultsText(params.query, allowed, hidden, config.allowedDomains);
 	return {
 		content: [{ type: "text", text }],
 		details: { query: params.query, provider: provider.id, results: allowed, hiddenCount: hidden } satisfies SearchDetails,
@@ -124,9 +137,9 @@ export async function executeWebSearch(params: WebSearchParams, deps: WebSearchD
 	}
 
 	const filtered = filterResultsByAllowlist(runOutcome.results, buildAllowlistOptions(config, session));
-	const result = formatSearchResults(params, config, provider, filtered);
+	const result = formatSearchResults({ params, config, provider, filtered });
 
 	recordSessionCall(session, ctx);
-	logCall(pi, ctx, { kind: "search", target: params.query, ok: true, detail: `${filtered.allowed.length} allowed, ${filtered.hidden} hidden (provider: ${provider.id})` });
+	logCall({ pi, ctx, entry: { kind: "search", target: params.query, ok: true, detail: `${filtered.allowed.length} allowed, ${filtered.hidden} hidden (provider: ${provider.id})` } });
 	return result;
 }

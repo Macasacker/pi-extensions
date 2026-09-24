@@ -47,11 +47,11 @@ export function prepareToolExecution({ pi, ctx, session, preparation }: ToolPrep
 	try {
 		assertEnabled(config);
 	} catch (error) {
-		logCall(pi, ctx, { kind: preparation.kind, target: preparation.target, ok: false, detail: "disabled (webSearch.enabled: false)" });
+		logCall({ pi, ctx, entry: { kind: preparation.kind, target: preparation.target, ok: false, detail: "disabled (webSearch.enabled: false)" } });
 		throw error;
 	}
 	warnIfConfigWarnings(ctx, loadedConfig.configWarnings, session);
 	warnIfAllowlistEmpty(config, session, ctx);
-	checkAllowlistDrift(pi, ctx, config, session);
+	checkAllowlistDrift({ pi, ctx, config, session });
 	return config;
 }

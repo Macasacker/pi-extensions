@@ -103,7 +103,7 @@ export function reportAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, di
 	if (diff.removed.length > 0) parts.push(`removed: ${diff.removed.join(", ")}`);
 	parts.push("If you didn't make this change, check who edited your settings (an agent can edit settings.json with the built-in file tools).");
 	if (ctx.hasUI) ctx.ui.notify(parts.join(" — "), "warning");
-	logCall(pi, ctx, { kind: "config", target: "allowlist", ok: true, detail: `${diff.added.length} added, ${diff.removed.length} removed` });
+	logCall({ pi, ctx, entry: { kind: "config", target: "allowlist", ok: true, detail: `${diff.added.length} added, ${diff.removed.length} removed` } });
 }
 
 /**
@@ -114,7 +114,15 @@ export function reportAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, di
  * command flow is surfaced as a warning + session log entry instead of being
  * applied silently.
  */
-export function checkAllowlistDrift(pi: ExtensionAPI, ctx: ExtensionContext, config: WebSearchConfig, session: SessionState): void {
+/** Everything `checkAllowlistDrift` needs: the logging targets, the effective config, and the session state. */
+interface AllowlistDriftContext {
+	pi: ExtensionAPI;
+	ctx: ExtensionContext;
+	config: WebSearchConfig;
+	session: SessionState;
+}
+
+export function checkAllowlistDrift({ pi, ctx, config, session }: AllowlistDriftContext): void {
 	const current = [...config.allowedDomains].sort();
 	const diff = diffAllowlists(session.lastAllowlist, current);
 	if (diff && (diff.added.length > 0 || diff.removed.length > 0)) {

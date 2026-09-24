@@ -26,14 +26,12 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Text } from "@earendil-works/pi-tui";
 
 import { loadConfig } from "./src/config.ts";
 import { applyDomainChange, parseDomainCommandArgs, showDomainList } from "./src/commands/domains.ts";
 import { buildStatusReport } from "./src/commands/status.ts";
-import { renderSearchCall, renderSearchResult, renderFetchCall, renderFetchResult } from "./src/render.ts";
+import { renderSearchCall, renderSearchResult, renderFetchCall, renderFetchResult, renderLogEntry } from "./src/render.ts";
 import { createSessionState, getProvider } from "./src/session.ts";
-import type { LogData } from "./src/log.ts";
 import { prepareToolExecution } from "./src/tools/common.ts";
 import { executeWebSearch } from "./src/tools/search.ts";
 import { executeWebFetch } from "./src/tools/fetch.ts";
@@ -134,10 +132,5 @@ export default function (pi: ExtensionAPI) {
 
 	// session log entry rendering
 
-	pi.registerEntryRenderer("web-search-log", (entry, { expanded }, theme) => {
-		const details = entry.data as LogData & { ts?: number };
-		let text = theme.fg("dim", `[web-search] ${details.kind} ${details.target}${details.ok ? "" : " — blocked/failed"}`);
-		if (expanded && details.detail) text += `\n${theme.fg("dim", details.detail)}`;
-		return new Text(text, 0, 0);
-	});
+	pi.registerEntryRenderer("web-search-log", (entry, { expanded }, theme) => renderLogEntry(entry, expanded, theme));
 }

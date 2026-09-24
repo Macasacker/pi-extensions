@@ -88,24 +88,29 @@ export function isIpLiteral(host: string): boolean {
 export function isPrivateIp(host: string): boolean {
 	const normalizedHost = normalizeHost(host);
 	const family = net.isIP(normalizedHost);
-	if (family === 0) return false;
+	if (family === 4) return isPrivateIpv4(normalizedHost);
+	if (family === 6) return isPrivateIpv6(normalizedHost);
+	return false;
+}
 
-	if (family === 4) {
-		const parts = normalizedHost.split(".").map((octetText) => Number(octetText));
-		if (parts.length !== 4 || parts.some((octet) => Number.isNaN(octet) || octet < 0 || octet > 255)) return false;
-		const [firstOctet, secondOctet] = parts;
-		if (firstOctet === 0) return true; // 0.0.0.0/8 (unspecified)
-		if (firstOctet === 10) return true; // RFC1918
-		if (firstOctet === 100 && secondOctet >= 64 && secondOctet <= 127) return true; // CGNAT
-		if (firstOctet === 127) return true; // loopback
-		if (firstOctet === 169 && secondOctet === 254) return true; // link-local / cloud metadata
-		if (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) return true; // RFC1918
-		if (firstOctet === 192 && secondOctet === 168) return true; // RFC1918
-		if (firstOctet >= 224) return true; // multicast + reserved
-		return false;
-	}
+/** True for private/reserved IPv4 addresses (dotted-quad form). */
+function isPrivateIpv4(normalizedHost: string): boolean {
+	const parts = normalizedHost.split(".").map((octetText) => Number(octetText));
+	if (parts.length !== 4 || parts.some((octet) => Number.isNaN(octet) || octet < 0 || octet > 255)) return false;
+	const [firstOctet, secondOctet] = parts;
+	if (firstOctet === 0) return true; // 0.0.0.0/8 (unspecified)
+	if (firstOctet === 10) return true; // RFC1918
+	if (firstOctet === 100 && secondOctet >= 64 && secondOctet <= 127) return true; // CGNAT
+	if (firstOctet === 127) return true; // loopback
+	if (firstOctet === 169 && secondOctet === 254) return true; // link-local / cloud metadata
+	if (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) return true; // RFC1918
+	if (firstOctet === 192 && secondOctet === 168) return true; // RFC1918
+	if (firstOctet >= 224) return true; // multicast + reserved
+	return false;
+}
 
-	// IPv6
+/** True for private/reserved IPv6 addresses (brackets already stripped). */
+function isPrivateIpv6(normalizedHost: string): boolean {
 	let ipv6Address = normalizedHost;
 	const zone = ipv6Address.indexOf("%");
 	if (zone !== -1) ipv6Address = ipv6Address.slice(0, zone);

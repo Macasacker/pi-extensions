@@ -40,6 +40,11 @@ function decodeDdgHref(href: string): string | null {
 
 const CHALLENGE_MARKERS = ["challenge-form", "anomaly", "not a robot", "please try again later", "unusual traffic"];
 
+/** True when the HTML looks like a DDG challenge/anomaly page rather than a results page. */
+function isDuckDuckGoChallengePage(html: string): boolean {
+	return CHALLENGE_MARKERS.some((challengeMarker) => html.toLowerCase().includes(challengeMarker)) && !html.includes("result__a");
+}
+
 function parseDuckDuckGoResults(html: string, limit: number): SearchResult[] {
 	const root = parse(html);
 	const results: SearchResult[] = [];
@@ -82,7 +87,7 @@ export function createDuckDuckGoProvider(options?: { fetchImpl?: typeof fetch })
 			}
 
 			const html = await readCappedText(response, PROVIDER_MAX_BODY_BYTES);
-			if (CHALLENGE_MARKERS.some((challengeMarker) => html.toLowerCase().includes(challengeMarker)) && !html.includes("result__a")) {
+			if (isDuckDuckGoChallengePage(html)) {
 				throw new Error(
 					"DuckDuckGo served a challenge page (likely rate limiting or datacenter IP). " +
 						"Retry later, or configure the Brave provider (webSearch.provider: \"brave\" + braveApiKey) for reliable results.",

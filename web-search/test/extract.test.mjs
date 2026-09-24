@@ -50,7 +50,7 @@ await test("handles empty/malformed HTML without throwing", () => {
 
 await test("truncateText keeps head and flags truncation", () => {
 	const input = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n");
-	const t = truncateText(input, 200, 5);
+	const t = truncateText(input, { maxChars: 200, maxLines: 5 });
 	assert.equal(t.truncated, true);
 	assert.ok(t.content.startsWith("line0"));
 	assert.ok(!t.content.includes("line99"));
@@ -58,7 +58,7 @@ await test("truncateText keeps head and flags truncation", () => {
 });
 
 await test("truncateText passes short text through", () => {
-	const t = truncateText("short", 100);
+	const t = truncateText("short", { maxChars: 100 });
 	assert.equal(t.truncated, false);
 	assert.equal(t.content, "short");
 });

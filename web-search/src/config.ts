@@ -149,9 +149,9 @@ function readSettingsJson(file: string): SettingsFileReadResult {
 	return { status: "ok", settings: parsed };
 }
 
-function clampInt(value: unknown, min: number, max: number, fallback: number): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-	return Math.min(max, Math.max(min, Math.round(value)));
+function clampInt(value: unknown, bounds: { min: number; max: number; fallback: number }): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return bounds.fallback;
+	return Math.min(bounds.max, Math.max(bounds.min, Math.round(value)));
 }
 
 function asBool(value: unknown, fallback: boolean): boolean {
@@ -188,23 +188,52 @@ interface ConfigLoadState {
 	configWarnings: string[];
 }
 
-function applyWebSearchSettings(config: WebSearchConfig, webSearchSettings: Record<string, unknown>): void {
-	config.enabled = asBool(webSearchSettings.enabled, config.enabled);
-	if (webSearchSettings.provider === "duckduckgo" || webSearchSettings.provider === "brave") config.provider = webSearchSettings.provider;
-	config.braveApiKey = asString(webSearchSettings.braveApiKey, config.braveApiKey);
-	config.useBuiltins = asBool(webSearchSettings.useBuiltins, config.useBuiltins);
-	config.allowSubdomains = asBool(webSearchSettings.allowSubdomains, config.allowSubdomains);
-	config.confirmOutsideAllowlist = asBool(webSearchSettings.confirmOutsideAllowlist, config.confirmOutsideAllowlist);
+/**
+ * Sanitize a raw settings `allowedDomains` array and merge it into the
+ * existing list (case-insensitive dedup, existing entries keep their order).
+ * Returns the sanitized entries and the merged list.
+ */
+function mergeDomainEntries(existingDomains: string[], rawEntries: unknown[]): { fresh: string[]; merged: string[] } {
+	const fresh: string[] = [];
+	for (const entry of rawEntries) {
+		const sanitizedDomain = sanitizeDomainEntry(entry);
+		if (sanitizedDomain) fresh.push(sanitizedDomain);
+	}
+
+	if (fresh.length === 0) return { fresh, merged: existingDomains };
+
+	const seen = new Set(existingDomains.map((domain) => domain.toLowerCase()));
+	const merged: string[] = [...existingDomains];
+	for (const domain of fresh) {
+		if (!seen.has(domain.toLowerCase())) {
+			seen.add(domain.toLowerCase());
+			merged.push(domain);
+		}
+	}
+	return { fresh, merged };
+}
+
+function applyWebSearchSettings(config: WebSearchConfig, webSearchSettings: Record<string, unknown>): WebSearchConfig {
+	const mergedConfig: WebSearchConfig = {
+		...config,
+		enabled: asBool(webSearchSettings.enabled, config.enabled),
+		braveApiKey: asString(webSearchSettings.braveApiKey, config.braveApiKey),
+		useBuiltins: asBool(webSearchSettings.useBuiltins, config.useBuiltins),
+		allowSubdomains: asBool(webSearchSettings.allowSubdomains, config.allowSubdomains),
+		confirmOutsideAllowlist: asBool(webSearchSettings.confirmOutsideAllowlist, config.confirmOutsideAllowlist),
+		blockPrivateNetworks: asBool(webSearchSettings.blockPrivateNetworks, config.blockPrivateNetworks),
+	};
+	if (webSearchSettings.provider === "duckduckgo" || webSearchSettings.provider === "brave") mergedConfig.provider = webSearchSettings.provider;
 	for (const key of Object.keys(NUMERIC_LIMITS) as NumericConfigKey[]) {
 		const limits = NUMERIC_LIMITS[key];
-		config[key] = clampInt(webSearchSettings[key], limits.min, limits.max, config[key]);
+		mergedConfig[key] = clampInt(webSearchSettings[key], { min: limits.min, max: limits.max, fallback: mergedConfig[key] });
 	}
-	config.blockPrivateNetworks = asBool(webSearchSettings.blockPrivateNetworks, config.blockPrivateNetworks);
 	if (webSearchSettings.useBuiltins === false) {
 		// Drop built-in domains but keep user-provided ones.
 		const builtinSet = new Set(BUILTIN_DEFAULTS.allowedDomains.map((domain) => domain.toLowerCase()));
-		config.allowedDomains = config.allowedDomains.filter((domain) => !builtinSet.has(domain.toLowerCase()));
+		mergedConfig.allowedDomains = mergedConfig.allowedDomains.filter((domain) => !builtinSet.has(domain.toLowerCase()));
 	}
+	return mergedConfig;
 }
 
 function mergeSettingsFile(state: ConfigLoadState, file: string): void {
@@ -228,22 +257,12 @@ function mergeSettingsFile(state: ConfigLoadState, file: string): void {
 	if (unknownKeys.length > 0) {
 		state.configWarnings.push(`web-search: unknown webSearch key(s) in ${file} are being ignored: ${unknownKeys.join(", ")}.`);
 	}
-	applyWebSearchSettings(state.config, webSearchSection);
+	state.config = applyWebSearchSettings(state.config, webSearchSection);
 
 	if (Array.isArray(webSearchSection.allowedDomains)) {
-		const fresh: string[] = [];
-		for (const entry of webSearchSection.allowedDomains) {
-			const sanitizedDomain = sanitizeDomainEntry(entry);
-			if (sanitizedDomain) fresh.push(sanitizedDomain);
-		}
+		const { fresh, merged } = mergeDomainEntries(state.config.allowedDomains, webSearchSection.allowedDomains);
 		if (fresh.length > 0) {
-			const seen = new Set(state.config.allowedDomains.map((domain) => domain.toLowerCase()));
-			for (const domain of fresh) {
-				if (!seen.has(domain.toLowerCase())) {
-					seen.add(domain.toLowerCase());
-					state.config.allowedDomains.push(domain);
-				}
-			}
+			state.config.allowedDomains = merged;
 			state.domainSources.push({ path: file, domains: fresh });
 		}
 	}

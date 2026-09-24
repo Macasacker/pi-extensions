@@ -26,6 +26,22 @@ interface BraveWebSearchResponse {
 	web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
 }
 
+/**
+ * Map a non-ok Brave response to a provider-specific error (rejected key,
+ * rate limit, generic) and throw it.
+ */
+function assertBraveResponseOk(response: Response): void {
+	if (response.status === 401 || response.status === 403) {
+		throw new Error(`Brave API rejected the key (HTTP ${response.status}). Check webSearch.braveApiKey.`);
+	}
+	if (response.status === 429) {
+		throw new Error("Brave API rate limit exceeded (429). Free tier allows 2,000 queries/month — retry later or switch to DuckDuckGo.");
+	}
+	if (!response.ok) {
+		throw new Error(`Brave API returned HTTP ${response.status}.`);
+	}
+}
+
 function parseBraveResults(data: BraveWebSearchResponse, limit: number): SearchResult[] {
 	const results: SearchResult[] = [];
 	for (const result of data.web?.results ?? []) {
@@ -65,15 +81,7 @@ export function createBraveProvider(apiKey: string, options?: { fetchImpl?: type
 				providerName: "Brave",
 			});
 
-			if (response.status === 401 || response.status === 403) {
-				throw new Error(`Brave API rejected the key (HTTP ${response.status}). Check webSearch.braveApiKey.`);
-			}
-			if (response.status === 429) {
-				throw new Error("Brave API rate limit exceeded (429). Free tier allows 2,000 queries/month — retry later or switch to DuckDuckGo.");
-			}
-			if (!response.ok) {
-				throw new Error(`Brave API returned HTTP ${response.status}.`);
-			}
+			assertBraveResponseOk(response);
 
 			const data = (await readCappedText(response, PROVIDER_MAX_BODY_BYTES).then((responseBody) => JSON.parse(responseBody))) as BraveWebSearchResponse;
 			return parseBraveResults(data, limit);

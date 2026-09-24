@@ -19,7 +19,14 @@ export interface LogData {
 	detail?: string;
 }
 
-export function logCall(pi: ExtensionAPI, ctx: ExtensionContext, entry: LogData): void {
+/** Everything `logCall` needs: the logging targets and the entry to record. */
+interface LogCallContext {
+	pi: ExtensionAPI;
+	ctx: ExtensionContext;
+	entry: LogData;
+}
+
+export function logCall({ pi, entry }: LogCallContext): void {
 	try {
 		// The target is LLM-supplied (query/URL) — sanitize before it is rendered
 		// from the session entry in the TUI.

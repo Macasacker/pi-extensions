@@ -4,6 +4,7 @@
  */
 
 import { Text } from "@earendil-works/pi-tui";
+import type { LogData } from "./log.ts";
 import { sanitizeForTui } from "./sanitize.ts";
 
 // Every string rendered below is either web-derived or LLM-supplied; sanitize
@@ -89,5 +90,13 @@ export function renderFetchResult(
 	text += ` ${theme.fg("dim", `· ${Math.round((details.bytes ?? 0) / 1024)}KB${details.truncated ? " (truncated)" : ""}${details.redirectCount ? ` · ${details.redirectCount} redirect(s)` : ""}`)}`;
 	if (details.lowContent) text += ` ${theme.fg("warning", "· little readable text (JS page or login wall?)")}`;
 	if (expanded && details.domain) text += `\n  ${theme.fg("dim", `domain: ${details.domain}`)}`;
+	return new Text(text, 0, 0);
+}
+
+/** Render a `web-search-log` session entry (the log line, plus detail when expanded). */
+export function renderLogEntry(entry: { data?: unknown }, expanded: boolean, theme: Theme): Text {
+	const details = entry.data as LogData & { ts?: number };
+	let text = theme.fg("dim", `[web-search] ${details.kind} ${details.target}${details.ok ? "" : " — blocked/failed"}`);
+	if (expanded && details.detail) text += `\n${theme.fg("dim", details.detail)}`;
 	return new Text(text, 0, 0);
 }

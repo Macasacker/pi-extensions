@@ -64,6 +64,21 @@ function combinedSignal(caller: AbortSignal | undefined, timeoutMs: number): Abo
 	return caller ? AbortSignal.any([caller, timeout]) : timeout;
 }
 
+/** Concatenate the read chunks into one buffer, capped at maxBytes. */
+function mergeChunksCapped(chunks: Uint8Array[], maxBytes: number): Uint8Array {
+	let merged = new Uint8Array(0);
+	for (const chunk of chunks) {
+		const room = maxBytes - merged.byteLength;
+		if (room <= 0) break;
+		const slice = chunk.byteLength <= room ? chunk : chunk.slice(0, room);
+		const extended = new Uint8Array(merged.byteLength + slice.byteLength);
+		extended.set(merged);
+		extended.set(slice, merged.byteLength);
+		merged = extended;
+	}
+	return merged;
+}
+
 export async function readBodyCapped(response: Response, maxBytes: number): Promise<{ body: string; bytes: number; truncated: boolean }> {
 	if (!response.body) return { body: "", bytes: 0, truncated: false };
 	const reader = response.body.getReader();
@@ -84,16 +99,7 @@ export async function readBodyCapped(response: Response, maxBytes: number): Prom
 			}
 		}
 	}
-	let merged = new Uint8Array(0);
-	for (const chunk of chunks) {
-		const room = maxBytes - merged.byteLength;
-		if (room <= 0) break;
-		const slice = chunk.byteLength <= room ? chunk : chunk.slice(0, room);
-		const extended = new Uint8Array(merged.byteLength + slice.byteLength);
-		extended.set(merged);
-		extended.set(slice, merged.byteLength);
-		merged = extended;
-	}
+	const merged = mergeChunksCapped(chunks, maxBytes);
 	const body = new TextDecoder("utf-8", { fatal: false }).decode(merged);
 	return { body, bytes: Math.min(total, maxBytes), truncated };
 }

@@ -66,6 +66,32 @@ function isHttpUrl(rawUrl: string): boolean {
 }
 
 /**
+ * The confirm flow for a host outside the allowlist: ask the user, and on a
+ * yes grant a session-scoped, host-limited exception, then re-check the URL
+ * against the rebuilt allowlist options.
+ *
+ * @param host the normalized host from the failed check (narrowed to a string by the caller)
+ * @throws {FetchBlockedError} when the user declines (or the re-check fails).
+ */
+async function requestOutsideAllowlistGrant(params: WebFetchParams, check: DomainCheck, host: string, deps: WebFetchDeps): Promise<FetchPermission> {
+	const { config, session, ctx, pi } = deps;
+	const userConfirmed = await ctx.ui.confirm(
+		"Fetch outside allowlist",
+		`${sanitizeForTui(params.url)}\n\nDomain ${host} is not in the allowlist. Fetch it for this session only?`,
+		{ timeout: 30000 },
+	);
+	if (!userConfirmed) {
+		logCall({ pi, ctx, entry: { kind: "fetch", target: params.url, ok: false, detail: `blocked: ${host} not allowed (user declined)` } });
+		throw new FetchBlockedError(params.url, `${check.reason ?? "not allowed"} (user declined confirmation)`);
+	}
+	session.grants.add(host);
+	const allowlistOptions = buildAllowlistOptions(config, session);
+	const rechecked = checkUrl(params.url, allowlistOptions);
+	if (!rechecked.allowed) throw new FetchBlockedError(params.url, rechecked.reason ?? "not allowed");
+	return { check: rechecked, allowlistOptions };
+}
+
+/**
  * Enforce the allowlist for the fetch target, with the optional confirm flow.
  *
  * A host outside the allowlist is blocked unless the user confirms (when
@@ -77,34 +103,21 @@ function isHttpUrl(rawUrl: string): boolean {
  */
 async function resolveFetchPermission(params: WebFetchParams, deps: WebFetchDeps): Promise<FetchPermission> {
 	const { config, session, ctx, pi } = deps;
-	let allowlistOptions = buildAllowlistOptions(config, session);
-	let check = checkUrl(params.url, allowlistOptions);
+	const allowlistOptions = buildAllowlistOptions(config, session);
+	const check = checkUrl(params.url, allowlistOptions);
 
 	// Only offer the confirm flow for http(s) URLs: a scheme-blocked URL
 	// (ftp://, file://) must not prompt, and a "yes" must not silently
 	// grant the host for other schemes.
 	if (!check.allowed && check.host && isHttpUrl(params.url)) {
 		if (config.confirmOutsideAllowlist && ctx.hasUI) {
-			const userConfirmed = await ctx.ui.confirm(
-				"Fetch outside allowlist",
-				`${sanitizeForTui(params.url)}\n\nDomain ${check.host} is not in the allowlist. Fetch it for this session only?`,
-				{ timeout: 30000 },
-			);
-			if (!userConfirmed) {
-				logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: `blocked: ${check.host} not allowed (user declined)` });
-				throw new FetchBlockedError(params.url, `${check.reason ?? "not allowed"} (user declined confirmation)`);
-			}
-			session.grants.add(check.host);
-			allowlistOptions = buildAllowlistOptions(config, session);
-			check = checkUrl(params.url, allowlistOptions);
-			if (!check.allowed) throw new FetchBlockedError(params.url, check.reason ?? "not allowed");
-		} else {
-			logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: `blocked: ${check.reason}` });
-			throw new FetchBlockedError(
-				params.url,
-				`${check.reason ?? "not allowed"}. Allowed domains: ${config.allowedDomains.join(", ") || "(none)"}. Use /web-search-domains add <domain> to add one.`,
-			);
+			return requestOutsideAllowlistGrant(params, check, check.host, deps);
 		}
+		logCall({ pi, ctx, entry: { kind: "fetch", target: params.url, ok: false, detail: `blocked: ${check.reason}` } });
+		throw new FetchBlockedError(
+			params.url,
+			`${check.reason ?? "not allowed"}. Allowed domains: ${config.allowedDomains.join(", ") || "(none)"}. Use /web-search-domains add <domain> to add one.`,
+		);
 	}
 	return { check, allowlistOptions };
 }
@@ -141,16 +154,24 @@ function saveFullTextToTempFile(toolCallId: string, fullText: string): string | 
 	}
 }
 
+/** Everything `buildFetchOutput` needs: the request, the pipeline deps, the fetch result, and the final URL check. */
+interface FetchOutputContext {
+	params: WebFetchParams;
+	deps: WebFetchDeps;
+	response: SafeFetchResult;
+	check: DomainCheck;
+}
+
 /**
  * Assemble the tool output: the untrusted banner around the truncated text,
  * plus the truncation / redirect / low-content notes, and the structured
  * details.
  */
-function buildFetchOutput(params: WebFetchParams, deps: WebFetchDeps, response: SafeFetchResult, check: DomainCheck): FetchOutput {
+function buildFetchOutput({ params, deps, response, check }: FetchOutputContext): FetchOutput {
 	const { config, toolCallId } = deps;
 	const extracted: ExtractedPage = isHtmlContentType(response.contentType) ? extractReadableText(response.body) : { text: response.body };
 	const maxChars = params.max_chars ?? config.maxContentChars;
-	const truncation = truncateText(extracted.text, maxChars);
+	const truncation = truncateText(extracted.text, { maxChars });
 	const lowContent = detectLowContent(response, extracted);
 
 	let text = `${buildUntrustedBannerHead(response.finalUrl, response.status, response.bytes)}\n${truncation.content}\n<<< END WEB CONTENT >>>`;
@@ -195,7 +216,7 @@ function buildFetchOutput(params: WebFetchParams, deps: WebFetchDeps, response: 
 function handleFetchFailure(error: unknown, params: WebFetchParams, deps: WebFetchDeps): AgentToolResult<FetchDetails> {
 	const { signal, pi, ctx } = deps;
 	if (error instanceof FetchBlockedError) {
-		logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: error.message });
+		logCall({ pi, ctx, entry: { kind: "fetch", target: params.url, ok: false, detail: error.message } });
 		throw error;
 	}
 	const errorMessage = error instanceof Error ? error.message : String(error);
@@ -204,10 +225,10 @@ function handleFetchFailure(error: unknown, params: WebFetchParams, deps: WebFet
 	// and AbortSignal.aborted is monotonic. A timeout does not abort the
 	// caller's signal, so it correctly falls through to the final throw.
 	if (signal?.aborted) {
-		logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: "cancelled" });
+		logCall({ pi, ctx, entry: { kind: "fetch", target: params.url, ok: false, detail: "cancelled" } });
 		return { content: [{ type: "text", text: "Cancelled" }], details: {} };
 	}
-	logCall(pi, ctx, { kind: "fetch", target: params.url, ok: false, detail: errorMessage });
+	logCall({ pi, ctx, entry: { kind: "fetch", target: params.url, ok: false, detail: errorMessage } });
 	throw error instanceof FetchError ? error : new FetchError(params.url, errorMessage);
 }
 
@@ -238,14 +259,18 @@ export async function executeWebFetch(params: WebFetchParams, deps: WebFetchDeps
 		return handleFetchFailure(error, params, deps);
 	}
 
-	const output = buildFetchOutput(params, deps, response, permission.check);
+	const output = buildFetchOutput({ params, deps, response, check: permission.check });
 
 	recordSessionCall(session, ctx);
-	logCall(pi, ctx, {
-		kind: "fetch",
-		target: params.url,
-		ok: true,
-		detail: `HTTP ${response.status}, ${response.bytes} bytes, ${output.outputChars} chars returned${response.redirects.length ? `, ${response.redirects.length} redirect(s)` : ""}`,
+	logCall({
+		pi,
+		ctx,
+		entry: {
+			kind: "fetch",
+			target: params.url,
+			ok: true,
+			detail: `HTTP ${response.status}, ${response.bytes} bytes, ${output.outputChars} chars returned${response.redirects.length ? `, ${response.redirects.length} redirect(s)` : ""}`,
+		},
 	});
 	return output.result;
 }
