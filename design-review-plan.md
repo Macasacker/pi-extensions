@@ -307,6 +307,44 @@ real findings.
 ### Batch 2 — Round 1
 | File | Dimension | Mechanism | Prob | Verdict | Action |
 |------|-----------|-----------|------|---------|--------|
+| index.ts | singleResponsibility | mixedAbstraction | 0.8096 | real | Extract the stats-line construction in `renderFooter` (spans + ctx gauge + right-side model + width fitting) into a named helper (e.g. `buildStatsLine(t, cu, model, width, theme)`) |
+| index.ts | functionDesign | opaqueName | 0.6072 | false positive (all call sites self-explanatory; `fmt` is a conventional format abbreviation) | |
+| index.ts | formattingComments | commentedOutCode | 0.6246 | false positive (no commented-out code; only doc/section comments) | |
+| index.ts | projectStructure | frameworkTopLevel | 0.823 | false positive (top-level names domain-oriented; default export is the mandated extension entry) | |
+| footer.test.mjs | singleResponsibility | mixedAbstraction | 0.8709 | false positive (flat sequence of mock setup + assertions; no mixed-abstraction body) | |
+| footer.test.mjs | functionDesign | tooManyArguments | 0.6609 | false positive (only 3-arg call is the framework-mandated setFooter factory; all others ≤2 args) | |
+| footer.test.mjs | sideEffects | prototypeExtension | 0.6334 | false positive (no prototype/global extensions) | |
+| footer.test.mjs | errorHandling | callbackChaining | 0.6268 | false positive (top-level await; no nested callbacks) | |
+| footer.test.mjs | formattingComments | commentedOutCode | 0.6658 | false positive (no commented-out code) | |
+| footer.test.mjs | projectStructure | frameworkTopLevel | 0.7333 | false positive (test fixture names, not framework-oriented) | |
+| setup.mjs | singleResponsibility | mixedAbstraction | 0.8843 | false positive (flat 27-line setup; single level of abstraction) | |
+| setup.mjs | variableDesign | unneededContext | 0.6686 | false positive (no owner-repeated member names) | |
+| setup.mjs | sideEffects | globalState | 0.7692 | false positive (process.env write is the documented one-shot handoff to the loader-hooks thread) | |
+| setup.mjs | controlFlow | elseIfChain | 0.8409 | false positive (guard clauses with early returns; no else-if chain) | |
+| setup.mjs | codeHygiene | overOptimization | 0.7562 | false positive (no micro-optimizations) | |
+| setup.mjs | classDesign | publicState | 0.8356 | false positive (no classes) | |
+| setup.mjs | errorHandling | ignoredError | 0.7662 | false positive (catch falls through to a descriptive throw; not swallowed) | |
+| setup.mjs | projectStructure | frameworkTopLevel | 0.7989 | false positive (domain-oriented names) | |
+| hooks.mjs | singleResponsibility | mixedAbstraction | 0.8485 | false positive (single 4-line resolve hook; one job) | |
+| hooks.mjs | functionDesign | tooManyArguments | 0.9547 | false positive (Node loader hook signature is framework-mandated) | |
+| hooks.mjs | controlFlow | elseIfChain | 0.7451 | false positive (single if; no chain) | |
+| hooks.mjs | codeHygiene | overOptimization | 0.6218 | false positive (no micro-optimizations) | |
+| hooks.mjs | classDesign | es5Constructor | 0.6285 | false positive (no classes/constructor functions) | |
+| hooks.mjs | errorHandling | callbackChaining | 1.0 | false positive (`next()` is the loader-hook continuation contract; no nested callbacks) | |
+| hooks.mjs | projectStructure | frameworkTopLevel | 0.8186 | false positive (`resolve` is the mandated Node loader-hook name) | |
+
+### Batch 2 — Round 2
+Re-review of `tui-footer/index.ts` after the R1 fix (`buildStatsLine` extracted
+from `renderFooter`). The model re-flagged the same 4 file-level dimensions at
+identical probabilities; each was verified against the code and moved to
+Disputed (see below). No new real findings.
+
+| File | Dimension | Mechanism | Prob | Verdict | Action |
+|------|-----------|-----------|------|---------|--------|
+| index.ts | singleResponsibility | mixedAbstraction | 0.8096 | disputed — fixed in R1 (`buildStatsLine` extracted; `renderFooter` is now a flat 3-line composition); reappears unchanged | moved to Disputed |
+| index.ts | functionDesign | opaqueName | 0.6072 | disputed — R1 false positive (all call sites self-explanatory; `fmt` is a conventional format abbreviation); reappears | moved to Disputed |
+| index.ts | formattingComments | commentedOutCode | 0.6246 | disputed — R1 false positive (no commented-out code; only doc/section comments); reappears | moved to Disputed |
+| index.ts | projectStructure | frameworkTopLevel | 0.823 | disputed — R1 false positive (domain-oriented names; default export is the mandated extension entry); reappears | moved to Disputed |
 
 ### Batch 3 — Round 1
 | File | Dimension | Mechanism | Prob | Verdict | Action |
@@ -330,3 +368,4 @@ stable probabilities; do not re-fix.
 - brave.ts — singleResponsibility/mixedAbstraction (fixed in R1: `assertBraveResponseOk` extracted), classDesign/publicState, projectStructure/frameworkTopLevel
 - duckduckgo.ts — singleResponsibility/mixedAbstraction (fixed in R1: `isDuckDuckGoChallengePage` extracted), functionDesign/tooManyArguments (SearchProvider interface contract), controlFlow/elseIfChain (2-branch), classDesign/publicState, errorHandling/callbackChaining (async/await), formattingComments/commentedOutCode, projectStructure/frameworkTopLevel
 - log.ts — singleResponsibility/mixedAbstraction (single sanitize+append), functionDesign/tooManyArguments (fixed in R1: `logCall` context object), sideEffects/globalState, controlFlow/nestedConditionals, errorHandling/callbackChaining (no async), projectStructure/frameworkTopLevel
+- tui-footer/index.ts — singleResponsibility/mixedAbstraction (fixed in R1: `buildStatsLine` extracted; `renderFooter` is a flat 3-line composition), functionDesign/opaqueName (all call sites self-explanatory), formattingComments/commentedOutCode (no commented-out code), projectStructure/frameworkTopLevel (domain-oriented names; default export is the mandated extension entry)

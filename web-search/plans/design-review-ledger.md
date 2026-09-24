@@ -33,10 +33,21 @@ taste pass clean, all gates green per wave, wave committed.
 
 ## Waves (execution order)
 
-1. **Wave 1** — web-search source (19 files, see plan). Status: review done
-   (114 findings: 16 real, 98 false positives; table in plan). User approved
-   all 16 on 2026-09-24. Fix subagent dispatched.
-2. **Wave 2** — tui-footer (4 files). Status: pending.
+1. **Wave 1** — web-search source (19 files, see plan). Status: **DONE**.
+   Review: 114 findings (16 real, 98 false positives); user approved all 16.
+   Fixed, taste pass, Round 2 re-review (reappearances → Disputed), gates
+   green (149 tests, tsc, lint), adversarial review `Verdict: Ready`.
+   Committed: `64f8dd1` (refactor, 14 files) + `3e15261` (docs). Optional
+   non-blocking nits (not fixed): two new helpers keep a 4-arg shape
+   (tools/search.ts `buildSearchResultsText`, tools/fetch.ts
+   `requestOutsideAllowlistGrant`); `checkAllowlistDrift` JSDoc now sits
+   above the context interface (session.ts).
+2. **Wave 2** — tui-footer (4 files). Status: **DONE**. Review: 25
+   findings (1 real, 24 false positives); user approved. Fixed
+   (`buildStatsLine` extracted from `renderFooter`), taste pass, Round 2
+   (reappearance → Disputed), gate green (`npm test`), adversarial review
+   `Verdict: Ready` (byte-identity verified). Committed in
+   `refactor(tui-footer)` + docs.
 3. **Wave 3** — web-search tests (12 files). Status: pending.
 
 Per wave: review subagent (read-only on source; appends round table to
@@ -45,11 +56,7 @@ orchestrator verify + adversarial review → commit.
 
 ## Files currently being changed
 
-Wave 1 fixes (behavior-preserving refactors): `index.ts`, `src/config.ts`,
-`src/domains.ts`, `src/fetch.ts`, `src/tools/fetch.ts`, `src/tools/search.ts`,
-`src/extract.ts`, `src/session.ts`, `src/providers/brave.ts`,
-`src/providers/duckduckgo.ts`, `src/log.ts`, plus `src/render.ts` (receives
-`renderLogEntry` from `index.ts`).
+`tui-footer/index.ts` (Wave 2 fix, pending commit) + plan/ledger docs.
 
 ## Blockers / open questions
 
@@ -57,7 +64,5 @@ Wave 1 fixes (behavior-preserving refactors): `index.ts`, `src/config.ts`,
 
 ## Next action
 
-Wave 1 fix subagent running. On completion: inspect diff, re-run gates
-(`npm test && npx tsc --noEmit && npm run lint` in `web-search/`), dispatch
-adversarial-code-review over the wave's changes, commit on green
-(scope `refactor(web-search):`), update ledger, dispatch Wave 2.
+Commit Wave 2, then dispatch Wave 3 review subagent (web-search tests,
+12 files).
