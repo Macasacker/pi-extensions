@@ -48,7 +48,16 @@ taste pass clean, all gates green per wave, wave committed.
    (reappearance → Disputed), gate green (`npm test`), adversarial review
    `Verdict: Ready` (byte-identity verified). Committed in
    `refactor(tui-footer)` + docs.
-3. **Wave 3** — web-search tests (12 files). Status: pending.
+3. **Wave 3** — web-search tests (12 files). Status: **DONE**. Review: 87
+   findings (1 real, 86 false positives); user approved. Fixed
+   (`allowedServer` route ladder → guard clauses in fetch.test.mjs), taste
+   pass, Round 2 (reappearance → Disputed), gates green (149 tests, tsc,
+   lint), adversarial review `Verdict: Ready` (byte-identity verified
+   across 19 URLs). Committed in `test(web-search)` + docs.
+
+**All waves complete.** Acceptance met: every wave reviewed, verified
+findings fixed (18 total: 16 + 1 + 1) or recorded as disputed, taste pass
+clean, gates green per wave, waves committed.
 
 Per wave: review subagent (read-only on source; appends round table to
 plan) → user gate → fix subagent (fixes + taste pass + re-review + gates) →
@@ -56,7 +65,7 @@ orchestrator verify + adversarial review → commit.
 
 ## Files currently being changed
 
-`tui-footer/index.ts` (Wave 2 fix, pending commit) + plan/ledger docs.
+`web-search/test/fetch.test.mjs` (Wave 3 fix, pending commit) + plan/ledger docs.
 
 ## Blockers / open questions
 
@@ -64,5 +73,4 @@ orchestrator verify + adversarial review → commit.
 
 ## Next action
 
-Commit Wave 2, then dispatch Wave 3 review subagent (web-search tests,
-12 files).
+Commit Wave 3, then final report to the user.

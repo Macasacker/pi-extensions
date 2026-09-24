@@ -349,6 +349,111 @@ Disputed (see below). No new real findings.
 ### Batch 3 — Round 1
 | File | Dimension | Mechanism | Prob | Verdict | Action |
 |------|-----------|-----------|------|---------|--------|
+| e2e.test.mjs | singleResponsibility | mixedAbstraction | 0.8889 | false positive (flat sequence of GWT `test()` calls; mock setup + assertions) | |
+| e2e.test.mjs | functionDesign | flagParameter | 0.7445 | false positive (no function takes a boolean argument) | |
+| e2e.test.mjs | controlFlow | negativePhrasing | 0.8051 | false positive (no negated predicate names; only negated assertions) | |
+| e2e.test.mjs | errorHandling | ignoredRejection | 0.8081 | false positive (only unawaited promise is teardown `server.close()`; a rejection would surface as an unhandled rejection, not be swallowed) | |
+| e2e.test.mjs | projectStructure | frameworkTopLevel | 0.7416 | false positive (domain-oriented fixture names) | |
+| commands.test.mjs | singleResponsibility | mixedAbstraction | 0.9145 | false positive (flat sequence of mock setup + assertions) | |
+| commands.test.mjs | functionDesign | tooManyArguments | 0.8159 | false positive (all functions take ≤2 args; `test(name, fn)` is the harness contract) | |
+| commands.test.mjs | sideEffects | inputMutation | 0.8279 | false positive (no function mutates its input; session fixture setup is test data) | |
+| commands.test.mjs | classDesign | es5Constructor | 0.8137 | false positive (no classes/constructor functions) | |
+| commands.test.mjs | errorHandling | callbackChaining | 1.0 | false positive (async/await; `withTempHome`/`test` callbacks are the harness/fixture contract with flat bodies) | |
+| commands.test.mjs | projectStructure | frameworkTopLevel | 0.6666 | false positive (domain-oriented fixture names) | |
+| config.test.mjs | singleResponsibility | mixedAbstraction | 0.9154 | false positive (flat sequence of `test()` calls) | |
+| config.test.mjs | functionDesign | tooManyArguments | 0.9129 | false positive (`loadConfig` takes one options object; all functions ≤2 args) | |
+| config.test.mjs | sideEffects | globalState | 0.8113 | false positive (no module-level mutable state; each test builds its own environment) | |
+| config.test.mjs | controlFlow | negativePhrasing | 0.6442 | false positive (no negated predicate names) | |
+| config.test.mjs | classDesign | publicState | 0.8487 | false positive (no classes) | |
+| config.test.mjs | errorHandling | callbackChaining | 0.9169 | false positive (no async code; `updateSettingsDomains` transform is a functional API) | |
+| config.test.mjs | formattingComments | commentedOutCode | 0.6079 | false positive (no commented-out code) | |
+| config.test.mjs | projectStructure | frameworkTopLevel | 0.8648 | false positive (domain-oriented names) | |
+| domains.test.mjs | singleResponsibility | mixedAbstraction | 0.9256 | false positive (flat sequence of `test()` calls) | |
+| domains.test.mjs | variableDesign | unneededContext | 0.6834 | false positive (no owner-repeated member names) | |
+| domains.test.mjs | functionDesign | tooManyArguments | 0.8446 | false positive (all functions take ≤2 args) | |
+| domains.test.mjs | sideEffects | inputMutation | 0.6748 | false positive (no input mutation) | |
+| domains.test.mjs | controlFlow | negativePhrasing | 0.7289 | false positive (no negated predicate names) | |
+| domains.test.mjs | codeHygiene | duplication | 0.6348 | false positive (repeated settings objects are per-test fixture data for independent adversarial cases, not shared logic) | |
+| domains.test.mjs | classDesign | hasAInheritance | 0.6685 | false positive (no classes) | |
+| domains.test.mjs | errorHandling | callbackChaining | 0.8936 | false positive (no async code) | |
+| domains.test.mjs | formattingComments | commentedOutCode | 0.6519 | false positive (no commented-out code) | |
+| domains.test.mjs | projectStructure | frameworkTopLevel | 0.8611 | false positive (domain-oriented names) | |
+| fetch.test.mjs | singleResponsibility | mixedAbstraction | 0.8963 | false positive (flat sequence of `test()` calls; server fixture is a single-level handler) | |
+| fetch.test.mjs | functionDesign | tooManyArguments | 0.9206 | false positive (all functions take ≤2 args) | |
+| fetch.test.mjs | sideEffects | globalState | 0.6574 | false positive (module-level constants are immutable fixtures, not mutable state) | |
+| fetch.test.mjs | controlFlow | elseIfChain | 0.8568 | real | Convert the `allowedServer` handler's if/else-if route ladder into guard clauses with early returns (matching the e2e.test.mjs server fixture) |
+| fetch.test.mjs | classDesign | hasAInheritance | 0.6429 | false positive (no classes) | |
+| fetch.test.mjs | errorHandling | ignoredRejection | 0.8101 | false positive (unawaited `server.close()` teardown; a rejection would surface as an unhandled rejection, not be swallowed) | |
+| fetch.test.mjs | projectStructure | frameworkTopLevel | 0.8453 | false positive (domain-oriented fixture names) | |
+| providers.test.mjs | singleResponsibility | mixedAbstraction | 0.9343 | false positive (flat sequence of `test()` calls) | |
+| providers.test.mjs | functionDesign | tooManyArguments | 0.8841 | false positive (the 3-arg `.search()` call is the SearchProvider interface contract) | |
+| providers.test.mjs | sideEffects | inputMutation | 0.714 | false positive (no input mutation; env write is documented fixture setup) | |
+| providers.test.mjs | controlFlow | typeCheckingLadder | 0.6195 | false positive (no instanceof/typeof) | |
+| providers.test.mjs | classDesign | es5Constructor | 0.6502 | false positive (no classes) | |
+| providers.test.mjs | errorHandling | callbackChaining | 0.9803 | false positive (async/await; `fakeFetch` is a functional fixture) | |
+| providers.test.mjs | projectStructure | frameworkTopLevel | 0.7125 | false positive (domain-oriented fixture names) | |
+| extract.test.mjs | singleResponsibility | mixedConcerns | 0.9558 | false positive (flat sequence of single-purpose `test()` calls) | |
+| extract.test.mjs | variableDesign | unneededContext | 0.7971 | false positive (no owner-repeated names) | |
+| extract.test.mjs | functionDesign | tooManyArguments | 0.9204 | false positive (all functions take ≤2 args) | |
+| extract.test.mjs | sideEffects | inputMutation | 0.7989 | false positive (no input mutation) | |
+| extract.test.mjs | controlFlow | elseIfChain | 0.9072 | false positive (no else-if chains) | |
+| extract.test.mjs | codeHygiene | overOptimization | 0.773 | false positive (no micro-optimizations) | |
+| extract.test.mjs | classDesign | hasAInheritance | 0.7862 | false positive (no classes) | |
+| extract.test.mjs | errorHandling | callbackChaining | 0.8793 | false positive (no async code) | |
+| extract.test.mjs | formattingComments | commentedOutCode | 0.6543 | false positive (no commented-out code) | |
+| extract.test.mjs | projectStructure | frameworkTopLevel | 0.8235 | false positive (domain-oriented names) | |
+| sanitize.test.mjs | singleResponsibility | mixedAbstraction | 0.9692 | false positive (flat sequence of `test()` calls) | |
+| sanitize.test.mjs | variableDesign | abbreviation | 0.8717 | false positive (all names fully spelled out) | |
+| sanitize.test.mjs | functionDesign | tooManyArguments | 0.9575 | false positive (all functions take ≤2 args) | |
+| sanitize.test.mjs | controlFlow | negativePhrasing | 0.7939 | false positive (no negated predicate names) | |
+| sanitize.test.mjs | codeHygiene | overOptimization | 0.8545 | false positive (no micro-optimizations) | |
+| sanitize.test.mjs | classDesign | hasAInheritance | 0.6066 | false positive (no classes) | |
+| sanitize.test.mjs | errorHandling | ignoredError | 0.8659 | false positive (no catch blocks) | |
+| sanitize.test.mjs | formattingComments | commentedOutCode | 0.7866 | false positive (no commented-out code) | |
+| sanitize.test.mjs | projectStructure | frameworkTopLevel | 0.816 | false positive (no framework-oriented top-level names) | |
+| harness.mjs | singleResponsibility | mixedAbstraction | 0.6605 | false positive (two small single-purpose functions) | |
+| harness.mjs | functionDesign | tooManyArguments | 0.8078 | false positive (`test(name, fn)` is the harness contract; ≤2 args) | |
+| harness.mjs | sideEffects | globalState | 0.7186 | false positive (module counters are the documented framework-free harness mechanism) | |
+| harness.mjs | controlFlow | nestedConditionals | 0.8274 | false positive (nesting is shallow: try/catch + one if) | |
+| harness.mjs | errorHandling | ignoredError | 0.8173 | false positive (catch records the failure and drives a non-zero exit via `finish()`) | |
+| run.mjs | singleResponsibility | mixedAbstraction | 0.8877 | false positive (flat 19-line runner; one job) | |
+| run.mjs | functionDesign | tooManyArguments | 0.8631 | false positive (no functions defined; ≤1-arg calls) | |
+| run.mjs | classDesign | es5Constructor | 0.6691 | false positive (no classes) | |
+| run.mjs | errorHandling | callbackChaining | 1.0 | false positive (top-level await; no callbacks) | |
+| run.mjs | projectStructure | frameworkTopLevel | 0.6891 | false positive (domain-oriented names) | |
+| setup.mjs | singleResponsibility | mixedAbstraction | 0.8843 | false positive (flat 27-line setup; single level of abstraction) | |
+| setup.mjs | variableDesign | unneededContext | 0.6686 | false positive (no owner-repeated names) | |
+| setup.mjs | sideEffects | globalState | 0.7692 | false positive (process.env write is the documented one-shot handoff to the loader-hooks thread) | |
+| setup.mjs | controlFlow | elseIfChain | 0.8409 | false positive (guard clauses with early returns; no chain) | |
+| setup.mjs | codeHygiene | overOptimization | 0.7562 | false positive (no micro-optimizations) | |
+| setup.mjs | classDesign | publicState | 0.8356 | false positive (no classes) | |
+| setup.mjs | errorHandling | ignoredError | 0.7662 | false positive (catch falls through to a descriptive throw) | |
+| setup.mjs | projectStructure | frameworkTopLevel | 0.7989 | false positive (domain-oriented names) | |
+| hooks.mjs | singleResponsibility | mixedAbstraction | 0.8485 | false positive (single 4-line resolve hook; one job) | |
+| hooks.mjs | functionDesign | tooManyArguments | 0.9547 | false positive (Node loader hook signature is framework-mandated) | |
+| hooks.mjs | controlFlow | elseIfChain | 0.7451 | false positive (single if; no chain) | |
+| hooks.mjs | codeHygiene | overOptimization | 0.6218 | false positive (no micro-optimizations) | |
+| hooks.mjs | classDesign | es5Constructor | 0.6285 | false positive (no classes) | |
+| hooks.mjs | errorHandling | callbackChaining | 1.0 | false positive (`next()` is the loader-hook continuation contract; no nested callbacks) | |
+| hooks.mjs | projectStructure | frameworkTopLevel | 0.8186 | false positive (`resolve` is the mandated Node loader-hook name) | |
+
+### Batch 3 — Round 2
+Re-review of `web-search/test/fetch.test.mjs` after the R1 fix (the `allowedServer`
+handler's 8-branch if/else-if route ladder converted to guard clauses with early
+returns, matching the e2e.test.mjs server fixture). The model re-flagged the same
+file-level dimensions at near-identical probabilities; each was verified against the
+code. The one R1 real finding (`controlFlow/elseIfChain`) reappears unchanged after
+the genuine fix (zero `else if` remain in the file) and was moved to Disputed (see
+below). No new real findings.
+
+| File | Dimension | Mechanism | Prob | Verdict | Action |
+|------|-----------|-----------|------|---------|--------|
+| fetch.test.mjs | singleResponsibility | mixedAbstraction | 0.8924 | false positive (flat sequence of GWT `test()` calls; server fixture is a single-level guard-clause handler) | |
+| fetch.test.mjs | functionDesign | tooManyArguments | 0.8756 | false positive (all functions take ≤2 args; `test(name, fn)` is the harness contract, `(request, response)` is the Node HTTP handler contract) | |
+| fetch.test.mjs | sideEffects | globalState | 0.6871 | false positive (module-level names are `const` fixtures, not mutable state) | |
+| fetch.test.mjs | controlFlow | elseIfChain | 0.8005 | disputed — fixed in R1 (guard clauses with early returns; zero `else if` remain in the file); reappears unchanged | moved to Disputed |
+| fetch.test.mjs | errorHandling | ignoredRejection | 0.895 | false positive (only unawaited promise is teardown `server.close()`; a rejection would surface as an unhandled rejection, not be swallowed) | |
+| fetch.test.mjs | projectStructure | frameworkTopLevel | 0.8517 | false positive (domain-oriented fixture names) | |
 
 ## Disputed findings (never fix)
 Findings that reappeared unchanged after a genuine R1 fix (or a R1 false positive),
@@ -369,3 +474,4 @@ stable probabilities; do not re-fix.
 - duckduckgo.ts — singleResponsibility/mixedAbstraction (fixed in R1: `isDuckDuckGoChallengePage` extracted), functionDesign/tooManyArguments (SearchProvider interface contract), controlFlow/elseIfChain (2-branch), classDesign/publicState, errorHandling/callbackChaining (async/await), formattingComments/commentedOutCode, projectStructure/frameworkTopLevel
 - log.ts — singleResponsibility/mixedAbstraction (single sanitize+append), functionDesign/tooManyArguments (fixed in R1: `logCall` context object), sideEffects/globalState, controlFlow/nestedConditionals, errorHandling/callbackChaining (no async), projectStructure/frameworkTopLevel
 - tui-footer/index.ts — singleResponsibility/mixedAbstraction (fixed in R1: `buildStatsLine` extracted; `renderFooter` is a flat 3-line composition), functionDesign/opaqueName (all call sites self-explanatory), formattingComments/commentedOutCode (no commented-out code), projectStructure/frameworkTopLevel (domain-oriented names; default export is the mandated extension entry)
+- web-search/test/fetch.test.mjs — controlFlow/elseIfChain (fixed in R1: `allowedServer` handler converted to guard clauses with early returns; zero `else if` remain in the file)
