@@ -19,32 +19,46 @@ const allowedServer = await startServer((request, response) => {
 	if (request.url === "/page") {
 		response.writeHead(200, { "Content-Type": "text/html" });
 		response.end("<html><body><h1>Page A</h1><p>hello from A</p></body></html>");
-	} else if (request.url === "/to-b") {
+		return;
+	}
+	if (request.url === "/to-b") {
 		response.writeHead(302, { Location: `http://localhost:${disallowedServerPort}/secret` });
 		response.end();
-	} else if (request.url === "/to-file") {
+		return;
+	}
+	if (request.url === "/to-file") {
 		response.writeHead(302, { Location: "file:///etc/passwd" });
 		response.end();
-	} else if (request.url === "/to-userinfo") {
+		return;
+	}
+	if (request.url === "/to-userinfo") {
 		response.writeHead(302, { Location: `http://user@localhost:${disallowedServerPort}/secret` });
 		response.end();
-	} else if (request.url === "/to-protorel") {
+		return;
+	}
+	if (request.url === "/to-protorel") {
 		response.writeHead(302, { Location: `//localhost:${disallowedServerPort}/secret` });
 		response.end();
-	} else if (request.url === "/big") {
+		return;
+	}
+	if (request.url === "/big") {
 		response.writeHead(200, { "Content-Type": "text/plain" });
 		const chunk = "x".repeat(4096);
 		for (let chunkIndex = 0; chunkIndex < 32; chunkIndex++) response.write(chunk); // 128KB
 		response.end();
-	} else if (request.url === "/slow") {
+		return;
+	}
+	if (request.url === "/slow") {
 		// never responds
-	} else if (request.url === "/notfound") {
+		return;
+	}
+	if (request.url === "/notfound") {
 		response.writeHead(404, { "Content-Type": "text/plain" });
 		response.end("nope");
-	} else {
-		response.writeHead(200, { "Content-Type": "text/html" });
-		response.end("<p>root A</p>");
+		return;
 	}
+	response.writeHead(200, { "Content-Type": "text/html" });
+	response.end("<p>root A</p>");
 });
 
 const disallowedServer = await startServer((request, response) => {
